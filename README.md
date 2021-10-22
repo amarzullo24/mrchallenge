@@ -35,6 +35,11 @@ make
 If the building ends with no errors you have done!
 
 # Start the system
+First of all, you need to start the *roscore*. Type:
+````
+roscore
+````
+
 Once installed, *ambf* needs to be started. You can start the simulation by typing:
 ````
 cd path_to_ambf/bin/lin-x86_64
@@ -59,13 +64,14 @@ Two more useful files:
 * Finally, the "brain.py" script is the core of the challenge. It is supposed to contain the actual code you are going to write. It is already precompiled such that you can automatically log the information computed by the evaluator in real-time.
 
 # Final remarks
-1. I will constatly update this repository as the challenge goes on. It is reasonalbe that bugs, improvements of the scene, modifications will be identified/needed by you.
-2. You are not allowed to use information coming from the PSM (e.g. it's position)
+1. I will constatly update this repository as the challenge goes on. It is reasonalbe that bugs, improvements of the scene, modifications will be identified/needed by you. To stay updated, one of the best way is to [fork](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the github repository, so you will have your own private project and you can integrate changements from this repository without affecting the code, like [here](https://levelup.gitconnected.com/how-to-update-fork-repo-from-original-repo-b853387dd471)
+3. You are not allowed to use information coming from the PSM (e.g. it's position)
 
 Useful refs:
 * [AMBF](https://github.com/WPI-AIM/ambf/tree/restructure)
 * [ROS](http://wiki.ros.org/ROS/Tutorials)
 * [Python Tutorial](https://www.w3schools.com/python/)
 * [Git commands in a nutshell](http://rogerdudler.github.io/git-guide/)
+* [Install Linux on Virtual Machines and similar](https://robocademy.com/2020/05/17/best-4-ways-to-install-ubuntu-for-ros/)
 
 
