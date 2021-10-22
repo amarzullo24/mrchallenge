@@ -35,6 +35,11 @@ make
 If the building ends with no errors you have done!
 
 # Start the system
+First of all, you need to start the *roscore*. Type:
+````
+roscore
+````
+
 Once installed, *ambf* needs to be started. You can start the simulation by typing:
 ````
 cd path_to_ambf/bin/lin-x86_64
