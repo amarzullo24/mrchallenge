@@ -72,5 +72,6 @@ Useful refs:
 * [ROS](http://wiki.ros.org/ROS/Tutorials)
 * [Python Tutorial](https://www.w3schools.com/python/)
 * [Git commands in a nutshell](http://rogerdudler.github.io/git-guide/)
+* [Install Linux on Virtual Machines and similar](https://robocademy.com/2020/05/17/best-4-ways-to-install-ubuntu-for-ros/)
 
 
