@@ -9,8 +9,13 @@ multibody configs:
   - "./multi-bodies/robots/blender-neuro-robot.yaml" #2
   - "./multi-bodies/robots/blender-raven2.yaml" #3
   - "./multi-bodies/robots/blender-mtm.yaml" #4
-  - "./multi-bodies/robots/blender-psm.yaml" #5
-  - "./multi-bodies/robots/blender-ecm.yaml" #6
+  
+  - "./multi-bodies/robots/challenge-psmtab.yaml" #5
+  #- "./multi-bodies/robots/blender-psm.yaml" #5
+  
+  - "./multi-bodies/robots/challenge-ecm.yaml" #6
+  #- "./multi-bodies/robots/blender-ecm.yaml" #6
+
   - "./multi-bodies/robots/blender-suj.yaml" #7
   - "./multi-bodies/robots/blender-kuka.yaml" #8
   - "./multi-bodies/robots/blender-pr2.yaml" #9
