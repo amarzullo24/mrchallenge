@@ -52,7 +52,7 @@ Once your system is started properly, in order to "test" the code you are going 
 I wrote a simple Python Script for doing that for you. You can find it under the "challenge" folder, named as "move_tool.py".
 Run it as
 ````
-python move_tool.py
+python move_tool.py --traj-name linear
 ````
 You should see the PSM performing a linear trajectory along an axis.
 
@@ -61,7 +61,10 @@ You should see the PSM performing a linear trajectory along an axis.
 ## 2. Start coding
 Two more useful files: 
 * the "evaluator.py" contains the code used to compute the evaluation metrics. It is also a nice reference to better understand how the *ambf Pyhton Client* works in practice and how you can handle and process information coming from the ROS topics.
-* Finally, the "brain.py" script is the core of the challenge. It is supposed to contain the actual code you are going to write. It is already precompiled such that you can automatically log the information computed by the evaluator in real-time.
+* Finally, the "brain.py" script is the core of the challenge. It is supposed to contain the actual code you are going to write. It is already precompiled such that you can automatically log the information computed by the evaluator in real-time. To run it, you can write something like:
+````
+python brain.py --team-name CHOSE_A_FANCY_NAME
+````
 
 # Final remarks
 1. I will constatly update this repository as the challenge goes on. It is reasonalbe that bugs, improvements of the scene, modifications will be identified/needed by you. To stay updated, one of the best way is to [fork](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the github repository, so you will have your own private project and you can integrate changements from this repository without affecting the code, like [here](https://levelup.gitconnected.com/how-to-update-fork-repo-from-original-repo-b853387dd471)
