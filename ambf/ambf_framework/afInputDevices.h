@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -124,8 +123,6 @@ public:
     cMatrix3d getRot();
 
     cMatrix3d getSimRotInitial();
-
-    virtual void updateGlobalPose();
 
     inline void applyForce(cVector3d force){
         if (m_rootLink->m_activeControllerType == afControlType::FORCE){
@@ -372,7 +369,7 @@ public:
     bool checkClaimedDeviceIdx(int a_idx);
 
 public:
-    std::shared_ptr<cHapticDeviceHandler> m_deviceHandler;
+    cHapticDeviceHandler* m_deviceHandler;
     std::vector<afCollateralControlUnit> m_collateralControlUnits;
 
     uint m_numDevices = 0;

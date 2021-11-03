@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -159,7 +158,7 @@ vector<double> ADFLoaderInterface::getColorRGBA(string a_color_name){
     return rgba;
 }
 
-bool ADFLoaderInterface::loadObjectAttribs(string a_filepath, string a_objName, afObjectType a_type, afBaseObjectAttributes *attribs)
+bool ADFLoaderInterface::loadObjectAttribs(string a_filepath, string a_objName, afType a_type, afBaseObjectAttributes *attribs)
 {
     if (!setLoaderVersionForFile(a_filepath)){
         return false;

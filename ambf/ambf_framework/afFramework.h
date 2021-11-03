@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -47,17 +46,32 @@
 //------------------------------------------------------------------------------
 
 //------------------------------------------------------------------------------
+
 #include "afUtils.h"
 #include "afAttributes.h"
+#include "afPluginInterface.h"
+#include "afPluginManager.h"
+
+//------------------------------------------------------------------------------
+
 #include "chai3d.h"
+
+//------------------------------------------------------------------------------
+
 #include "btBulletDynamicsCommon.h"
 #include "BulletSoftBody/btSoftBody.h"
 #include <BulletCollision/NarrowPhaseCollision/btRaycastCallback.h>
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
-#include <thread>
-#include <fstream>
+
 //------------------------------------------------------------------------------
+
+#include <thread>
+
+//-----------------------------------------------------------------------------
+
 #include <GLFW/glfw3.h>
+
+//-----------------------------------------------------------------------------
 
 #ifdef AF_ENABLE_OPEN_CV_SUPPORT
 #include <image_transport/image_transport.h>
@@ -66,7 +80,7 @@
 #endif
 
 //-----------------------------------------------------------------------------
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
 #include "ambf_server/Actuator.h"
 #include "ambf_server/Camera.h"
 #include "ambf_server/Light.h"
@@ -77,15 +91,19 @@
 #include "ambf_server/World.h"
 #endif
 
+//-----------------------------------------------------------------------------
+
 // Support for Depth Image to PointCloud2
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
 #endif
 
+//-----------------------------------------------------------------------------
 
 #include <time.h>
 #include <random>
+
 //-----------------------------------------------------------------------------
 
 //------------------------------------------------------------------------------
@@ -132,14 +150,15 @@ typedef vector<afSoftBodyPtr> afSoftBodyVec;
 typedef vector<afGhostObjectPtr> afGhostObjectVec;
 typedef vector<afJointPtr> afJointVec;
 //------------------------------------------------------------------------------
-class afLight;
 class afCamera;
-typedef afLight* afLightPtr;
 typedef afCamera* afCameraPtr;
-typedef map<string, afLightPtr> afLightMap;
 typedef map<string, afCameraPtr> afCameraMap;
-typedef vector<afLightPtr> afLightVec;
 typedef vector<afCameraPtr> afCameraVec;
+//------------------------------------------------------------------------------
+class afLight;
+typedef afLight* afLightPtr;
+typedef map<string, afLightPtr> afLightMap;
+typedef vector<afLightPtr> afLightVec;
 //------------------------------------------------------------------------------
 class afSensor;
 class afResistanceSensor;
@@ -162,10 +181,18 @@ typedef afVehicle* afVehiclePtr;
 typedef map<string, afVehiclePtr> afVehicleMap;
 typedef vector<afVehiclePtr> afVehicleVec;
 //------------------------------------------------------------------------------
+class afVolume;
+typedef afVolume* afVolumePtr;
+typedef map<string, afVolumePtr> afVolumeMap;
+typedef vector<afVolumePtr> afVolumeVec;
+//------------------------------------------------------------------------------
 class afPointCloud;
 typedef afPointCloud* afPointCloudPtr;
 typedef cMultiPoint* cMultiPointPtr;
-
+//------------------------------------------------------------------------------
+typedef map<string, afBaseObject*> afBaseObjectMap;
+typedef vector<afBaseObjectPtr> afBaseObjectVec;
+typedef map<afType, map<string, afBaseObject*> > afChildrenMap;
 
 typedef unsigned long ulong;
 
@@ -200,17 +227,60 @@ public:
 };
 
 
+class afIdentification{
+public:
+
+    afIdentification(afType a_type);
+
+    // Get the type of communication instance
+    afType getType(){return m_type;}
+
+    string getTypeAsStr();
+
+    // Get Name of this object
+    string getName();
+
+    // Get Namespace for this object
+    string getNamespace();
+
+    string getQualifiedName();
+
+    // Set Name of object
+    void setName(string a_name);
+
+    // Set namespace for this object
+    void setNamespace(string a_namespace);
+
+    string getQualifiedIdentifier();
+
+    void setIdentifier(string a_name){m_identifier = a_name;}
+
+protected:
+    // The namespace for this body, this namespace affect afComm and the stored name of the body
+    // in the internal body tree map.
+    string m_namespace;
+
+    string m_name;
+
+    // Identifier name, which could be different from the name
+    string m_identifier;
+
+    // Type of object
+    const afType m_type;
+};
+
+
 class afComm{
 public:
     afComm(){}
     virtual ~afComm(){}
 
-    virtual void afCreateCommInstance(afObjectType type, string a_name, string a_namespace, int a_min_freq=50, int a_max_freq=2000, double time_out=0.5);
+    virtual void afCreateCommInstance(afType type, string a_name, string a_namespace, int a_min_freq=50, int a_max_freq=2000, double time_out=0.5);
 
     // This method is to retrieve all the commands for appropriate af comm instances.
     virtual void fetchCommands(double dt=0.001);
 
-    //! This method applies updates Wall and Sim Time for AF State Message.
+    //! This method applies updates Wall and Sim Time for State Message.
     virtual void afUpdateTimes(const double a_wall_time, const double a_sim_time);
 
     // Check if object is active or passive for communication
@@ -218,14 +288,6 @@ public:
 
     // Set as passive so it doesn't communication outside
     inline void setPassive(bool a_passive){m_passive = a_passive;}
-
-    // Get Name of this object
-    inline string getName(){return m_name;}
-
-    // Get Namespace for this object
-    inline string getNamespace(){return m_namespace;}
-
-    inline string getQualifiedName(){return m_namespace + m_name;}
 
     // Get Min publishing frequency for this object
     inline int getMinPublishFrequency(){return m_minPubFreq;}
@@ -238,15 +300,6 @@ public:
 
     // Set Max publishing frequency for this object
     inline void setMaxPublishFrequency(int freq){m_maxPubFreq = freq;}
-
-    // Get the type of communication instance
-    afObjectType getCommType(){return m_commType;}
-
-    // Set Name of object
-    inline void setName(string a_name){m_name = a_name;}
-
-    // Set namespace for this object
-    inline void setNamespace(string a_namespace){m_namespace = a_namespace; }
 
 public:
 
@@ -261,10 +314,8 @@ public:
     // This is only for internal use as it could be reset
     unsigned short m_read_count = 0;
 
-    string m_name;
-
-    //! AF CHAI Env
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+    //! AMBF ROS COMM
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     std::shared_ptr<ambf_comm::Actuator> m_afActuatorCommPtr;
     std::shared_ptr<ambf_comm::Camera> m_afCameraCommPtr;
     std::shared_ptr<ambf_comm::Light> m_afLightCommPtr;
@@ -275,14 +326,7 @@ public:
     std::shared_ptr<ambf_comm::World> m_afWorldCommPtr;
 #endif
 
-protected:
-    // The namespace for this body, this namespace affect afComm and the stored name of the body
-    // in the internal body tree map.
-    string m_namespace = "";
-
-
 private:
-    afObjectType m_commType;
 
 
     // Min publishing frequency
@@ -410,14 +454,14 @@ public:
     // The rigid body that this proximity sensor is sensing
     btRigidBody* m_sensedBTRigidBody = nullptr;
 
-    // This is the AF Rigid body sensed by this sensor
-    afRigidBodyPtr m_sensedAFRigidBody = nullptr;
+    // This is the Rigid body sensed by this sensor
+    afRigidBodyPtr m_sensedRigidBody = nullptr;
 
     // The soft body that this proximity sensor is sensing
     btSoftBody* m_sensedBTSoftBody = nullptr;
 
-    // This is the AF Soft body sensed by this sensor
-    afSoftBodyPtr m_sensedAFSoftBody = nullptr;
+    // This is the Soft body sensed by this sensor
+    afSoftBodyPtr m_sensedSoftBody = nullptr;
 
     // The internal index of the face belonging to the sensed soft body
     int m_sensedSoftBodyFaceIdx = -1;
@@ -522,24 +566,22 @@ protected:
 };
 
 
-class afBaseObject: public afComm{
+class afBaseObject: public afIdentification, public afComm{
 
 public:
-    afBaseObject(afWorldPtr a_afWorld, afModelPtr a_afModelPtr = nullptr);
+    afBaseObject(afType a_type, afWorldPtr a_afWorld, afModelPtr a_afModelPtr = nullptr);
     virtual ~afBaseObject();
 
     virtual bool createFromAttribs(afBaseObjectAttributes* a_attribs);
 
-    inline string getQualifiedIdentifier(){return m_namespace + m_identifier;}
-
-    void setIdentifier(string a_name){m_identifier = a_name;}
+    virtual bool loadPlugins(vector<afPluginAttributes>* pluginAttribs);
 
     // Method called by afComm to apply positon, force or joint commands on the afRigidBody
     // In case the body is kinematic, only position cmds will be applied
     virtual void fetchCommands(double){}
 
     // The update method called at every simulation iteration.
-    virtual void update(){}
+    virtual void update(double dt);
 
     cVector3d getLocalPos();
 
@@ -552,9 +594,7 @@ public:
     // Get Initial Pose of this body
     inline cTransform getInitialTransform(){return m_initialTransform;}
 
-    afBaseObjectPtr getParentObject();
-
-    inline cMultiMesh* getVisualMesh(){return m_visualMesh;}
+    inline afBaseObjectPtr getParentObject(){return m_parentObject;}
 
     void setLocalPos(const cVector3d &pos);
 
@@ -603,20 +643,17 @@ public:
 
     virtual void updateSceneObjects();
 
-    virtual void updateGlobalPose();
+    void pluginsGraphicsUpdate();
 
-    void showVisualFrame();
+    void pluginsPhysicsUpdate(double dt);
 
-    inline bool isShaderPgmDefined(){
-        return m_shaderAttribs.m_shaderDefined;
-    }
+    virtual void updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform = cTransform());
 
-    // Enable Shader Program Associate with this object
-    virtual void loadShaderProgram();
+    void calculateFrameSize();
 
     // Resolve Parenting. Usuaully a mehtod to be called at a later if the object
     // to be parented to hasn't been loaded yet.
-    virtual bool resolveParenting(string a_parentName="");
+    virtual bool resolveParent(string a_parentName="", bool suppress_warning=false);
 
     // Ptr to afWorld
     afWorldPtr m_afWorld;
@@ -626,42 +663,252 @@ public:
     // Parent body name defined in the ADF
     string m_parentName;
 
-    // Identifier name, which could be different from the name
-    string m_identifier;
-
-    // Filepath to the visual mesh
-    afPath m_visualMeshFilePath;
-
-    cMultiMesh* m_visualMesh;
-
     std::vector<afSceneObject*> m_childrenSceneObjects;
 
     vector<afBaseObjectPtr> m_afChildrenObjects;
 
 protected:
+
     // Initial location of Rigid Body
     cTransform m_initialTransform;
 
     // Scale of mesh
     double m_scale;
 
-    // Flag for the Shader Program
-    afShaderAttributes m_shaderAttribs;
-
     cTransform m_localTransform;
 
     cTransform m_globalTransform;
 
     afBaseObjectPtr m_parentObject;
+
+    // Plugin Manager
+    afBaseObjectPluginManager m_pluginManager;
+
+    vector<afBaseObjectPtr> m_childrenObjects;
+};
+
+
+///
+/// \brief The afMeshObject class
+///
+class afMeshObject{
+public:
+    afMeshObject(afWorldPtr a_afWorld, afModelPtr a_afModel);
+
+    cMultiMesh *getVisualObject();
+
+    bool isShaderProgramDefined();
+
+    bool isShaderProgramDefined(cMesh* a_mesh);
+
+    // Enable Shader Program Associate with this object
+    virtual void loadShaderProgram();
+
+    virtual bool isNormalMapDefined();
+
+    virtual bool isNormalMapDefined(cMesh* a_mesh);
+
+    virtual bool isNormalTextureDefined();
+
+    virtual bool isNormalTextureDefined(cMesh* a_mesh);
+
+    virtual void enableShaderNormalMapping(bool enable);
+
+    virtual void enableShaderNormalMapping(bool enable, cMesh* a_mesh);
+
+    virtual cShaderProgramPtr getShaderProgram();
+
+    virtual void setShaderProgram(cShaderProgramPtr a_program);
+
+    virtual void backupShaderProgram();
+
+    virtual void restoreShaderProgram();
+
+    // Filepath to the visual mesh
+    afPath m_visualMeshFilePath;
+
+    cMultiMesh* m_visualMesh;
+
+protected:
+
+    // Flag for the Shader Program
+    afShaderAttributes m_shaderAttribs;
+
+    // Shader Program Backup
+    cShaderProgramPtr m_shaderProgramBackup = nullptr;
+
+private:
+    afModelPtr m_model;
+
+    afWorldPtr m_world;
+};
+
+
+///
+/// \brief The afObjectManager class
+///
+class afObjectManager{
+public:
+
+    afObjectManager();
+
+    string addLight(afLightPtr a_rb);
+
+    string addCamera(afCameraPtr a_rb);
+
+    string addRigidBody(afRigidBodyPtr a_rb);
+
+    string addSoftBody(afSoftBodyPtr a_sb);
+
+    string addGhostObject(afGhostObjectPtr a_go);
+
+    string addJoint(afJointPtr a_jnt);
+
+    string addActuator(afActuatorPtr a_actuator);
+
+    string addSensor(afSensorPtr a_sensor);
+
+    string addVehicle(afVehiclePtr a_vehicle);
+
+    string addVolume(afVolumePtr a_volume);
+
+    string addBaseObject(afBaseObjectPtr a_obj);
+
+    bool addBaseObject(afBaseObjectPtr a_obj, string a_name);
+
+    void resolveObjectsMissingParents(afBaseObjectPtr a_newObject);
+
+    afLightPtr getLight(string a_name, bool suppress_warning=false);
+
+    afCameraPtr getCamera(string a_name, bool suppress_warning=false);
+
+    afRigidBodyPtr getRigidBody(string a_name, bool suppress_warning=false);
+
+    afRigidBodyPtr getRigidBody(btRigidBody* a_body, bool suppress_warning=false);
+
+    afSoftBodyPtr getSoftBody(string a_name, bool suppress_warning=false);
+
+    afSoftBodyPtr getSoftBody(btSoftBody* a_body, bool suppress_warning=false);
+
+    afGhostObjectPtr getGhostObject(string a_name, bool suppress_warning=false);
+
+    afGhostObjectPtr getGhostObject(btGhostObject* a_body, bool suppress_warning=false);
+
+    // Get an object by this name. The object could be of any type
+    afBaseObjectPtr getBaseObject(string a_name, bool suppress_warning);
+
+    // Mark that this object needs parenting
+    void addObjectMissingParent(afBaseObjectPtr a_obj);
+
+    // Get the root parent of a body, if null is provided, returns the parent body
+    // with most children. This method is similar to the corresponding afWorld
+    // method however it searches in the local model space than the world space
+    afRigidBodyPtr getRootRigidBody(afRigidBodyPtr a_bodyPtr = nullptr);
+
+    afJointPtr getJoint(string a_name, bool suppress_warning=false);
+
+    afActuatorPtr getActuator(string a_name);
+
+    afSensorPtr getSensor(string a_name);
+
+    afVehiclePtr getVehicle(string a_name, bool suppress_warning=false);
+
+    afVolumePtr getVolume(string a_name, bool suppress_warning=false);
+
+    afBaseObjectPtr getBaseObject(string a_name, afBaseObjectMap* a_map, bool suppress_warning);
+
+     // Template method to get all objects of specific type
+    template <class T>
+    vector<T*> getBaseObjects(afBaseObjectMap* objMap);
+
+
+    afLightVec getLights();
+
+    afCameraVec getCameras();
+
+    afRigidBodyVec getRigidBodies();
+
+    afSoftBodyVec getSoftBodies();
+
+    afGhostObjectVec getGhostObjects();
+
+    afJointVec getJoints();
+
+    afActuatorVec getActuators();
+
+    afSensorVec getSensors();
+
+    afVehicleVec getVehicles();
+
+    afVolumeVec getVolumes();
+
+
+    inline afBaseObjectMap* getLightMap(){return &m_childrenObjectsMap[afType::LIGHT];}
+
+    inline afBaseObjectMap* getCameraMap(){return &m_childrenObjectsMap[afType::CAMERA];}
+
+    inline afBaseObjectMap* getRigidBodyMap(){return &m_childrenObjectsMap[afType::RIGID_BODY];}
+
+    inline afBaseObjectMap* getSoftBodyMap(){return &m_childrenObjectsMap[afType::SOFT_BODY];}
+
+    inline afBaseObjectMap* getGhostObjectMap(){return &m_childrenObjectsMap[afType::GHOST_OBJECT];}
+
+    inline afBaseObjectMap* getJointMap(){return &m_childrenObjectsMap[afType::JOINT];}
+
+    inline afBaseObjectMap* getActuatorMap(){return &m_childrenObjectsMap[afType::ACTUATOR];}
+
+    inline afBaseObjectMap* getSensorMap(){return &m_childrenObjectsMap[afType::SENSOR];}
+
+    inline afBaseObjectMap* getVehicleMap(){return &m_childrenObjectsMap[afType::VEHICLE];}
+
+    inline afBaseObjectMap* getVolumeMap(){return &m_childrenObjectsMap[afType::VOLUME];}
+
+    inline afChildrenMap* getChildrenMap(){return &m_childrenObjectsMap;}
+
+    // Return true if object exists in the vec
+    bool checkIfExists(afBaseObject* a_obj, vector<afBaseObject*> *a_objectsVec);
+
+protected:
+    afChildrenMap m_childrenObjectsMap;
+
+    vector<afBaseObjectPtr> m_afObjectsMissingParents;
+};
+
+
+
+///
+/// \brief The afModelManager class
+///
+class afModelManager: public afObjectManager{
+public:
+    afModelManager(afWorldPtr a_afWorld);
+
+    string addModel(afModelPtr a_model);
+
+    afModelPtr getModel(string a_name, bool suppress_warning=false);
+
+    afModelVec getModels();
+
+    inline afModelMap* getModelMap(){return &m_modelsMap;}
+
+protected:
+
+    void addModelsChildrenToWorld(afModelPtr a_model);
+
+    void addChildsSceneObjectsToWorld(afBaseObjectPtr a_object);
+
+    afObjectManager m_objectManager;
+    afModelMap m_modelsMap;
+    afWorldPtr m_afWorld;
 };
 
 
 ///
 /// \brief The afInertialObject class
 ///
-class afInertialObject: public afBaseObject{
+class afInertialObject: public afBaseObject, public afMeshObject{
 public:
-    afInertialObject(afWorldPtr a_afWorld, afModelPtr a_modelPtr);
+    afInertialObject(afType a_type, afWorldPtr a_afWorld, afModelPtr a_modelPtr);
     ~afInertialObject();
 
     // Apply force that is specified in the world frame at a point specified in world frame
@@ -766,7 +1013,7 @@ public:
     virtual void fetchCommands(double dt);
 
     // This method updates the AMBF position representation from the Bullet dynamics engine.
-    virtual void update();
+    virtual void update(double dt);
 
     virtual bool createFromAttribs(afRigidBodyAttributes* a_attribs);
 
@@ -803,13 +1050,13 @@ public:
     bool isDirectChild(btRigidBody* a_body);
 
     // Add sensor to this body
-    void addAFSensor(afSensorPtr a_sensor){m_afSensors.push_back(a_sensor);}
+    void addSensor(afSensorPtr a_sensor){m_afSensors.push_back(a_sensor);}
 
     // Add sensor to this body
-    void addAFActuator(afActuatorPtr a_actuator){m_afActuators.push_back(a_actuator);}
+    void addActuator(afActuatorPtr a_actuator){m_afActuators.push_back(a_actuator);}
 
     // Get the sensors for this body
-    inline vector<afSensorPtr> getAFSensors(){return m_afSensors;}
+    inline vector<afSensorPtr> getSensors(){return m_afSensors;}
 
     // If the Position Controller is active, disable Position Controller from Haptic Device
     afControlType m_activeControllerType;
@@ -1016,9 +1263,11 @@ public:
     virtual void fetchCommands(double dt){}
 
     // This method updates the AMBF position representation from the Bullet dynamics engine.
-    virtual void update();
+    virtual void update(double dt);
 
     virtual bool createFromAttribs(afGhostObjectAttributes* a_attribs);
+
+    virtual void createInertialObject();
 
     virtual void setLocalTransform(cTransform &trans);
 
@@ -1054,7 +1303,7 @@ public:
 
     virtual void fetchCommands(double);
 
-    virtual void update();
+    virtual void update(double dt);
 
     btVector3 getDefaultJointAxisInParent(afJointType a_type);
 
@@ -1170,17 +1419,26 @@ public:
 
     virtual void deactuate(){}
 
+    virtual void enableVisualization(){}
+
+    // Toggle the debug display of the sensor
+    inline void toggleVisibility() {m_show = !m_show; }
+
     // Parent Body for this sensor
     afRigidBodyPtr m_parentBody;
 
-    bool m_showActuator;
-
     virtual void fetchCommands(double){}
 
-    virtual void update(){}
+    virtual void update(double dt){}
 
 protected:
+    bool m_show = false;
+
+    double m_visibleSize = 0.002;
+
     bool m_actuate = false;
+
+    bool m_visualizationEnabled = false;
 };
 
 
@@ -1223,12 +1481,16 @@ public:
 
     virtual void actuate(afSensorPtr a_sensorPtr);
 
+    virtual void enableVisualization();
+
+    void visualize(bool show);
+
     // Remove the constraint
     virtual void deactuate();
 
     virtual void fetchCommands(double dt);
 
-    virtual void update();
+    virtual void update(double dt);
 
 protected:
 
@@ -1263,7 +1525,7 @@ public:
     virtual bool createFromAttribs(afSensorAttributes* a_attribs){return false;}
 
     // Toggle the debug display of the sensor
-    inline void toggleSensorVisibility() {m_showSensor = !m_showSensor; }
+    inline void toggleVisibility() {m_show = !m_show; }
 
     // Get the body this sensor is a child of
     inline afRigidBodyPtr getParentBody(){return m_parentBody;}
@@ -1275,19 +1537,21 @@ public:
     afSensorType m_sensorType;
 
     // Toggle visibility of this sensor
-    bool m_showSensor = true;
+    bool m_show = true;
+
+    bool m_visualizationEnabled = false;
 
     virtual void fetchCommands(double dt);
 
     // Upate the sensor, usually called at each dynamic tick update of the physics engine
-    virtual void update();
+    virtual void update(double dt);
 
 };
 
 
-
-
-
+///
+/// \brief The afRayTracerSensor class
+///
 class afRayTracerSensor: public afSensor{
 
     friend class afProximitySensor;
@@ -1300,7 +1564,7 @@ public:
     virtual bool createFromAttribs(afRayTracerSensorAttributes* a_attribs);
 
     // Update sensor is called on each update of positions of RBs and SBs
-    virtual void update();
+    virtual void update(double dt);
 
     // Check if the sensor sensed something. Depending on what type of sensor this is
     inline bool isTriggered(uint idx){return m_rayTracerResults[idx].m_triggered;}
@@ -1311,14 +1575,14 @@ public:
     // Return the sensed BT RigidBody's Ptr
     inline btRigidBody* getSensedBTRigidBody(uint idx){return m_rayTracerResults[idx].m_sensedBTRigidBody;}
 
-    // Get the sensed AF Rigid Body's Ptr
-    inline afRigidBodyPtr getSensedAFRigidBody(uint idx){return m_rayTracerResults[idx].m_sensedAFRigidBody;}
+    // Get the sensed Rigid Body's Ptr
+    inline afRigidBodyPtr getSensedRigidBody(uint idx){return m_rayTracerResults[idx].m_sensedRigidBody;}
 
     // Get the sensed BT SoftBody's Ptr
     inline btSoftBody* getSensedBTSoftBody(uint idx){return m_rayTracerResults[idx].m_sensedBTSoftBody;}
 
-    // Get the sensed AF Soft Body's Ptr
-    inline afSoftBodyPtr getSensedAFSoftBody(uint idx){return m_rayTracerResults[idx].m_sensedAFSoftBody;}
+    // Get the sensed Soft Body's Ptr
+    inline afSoftBodyPtr getSensedSoftBody(uint idx){return m_rayTracerResults[idx].m_sensedSoftBody;}
 
     // Get the sensed SoftBody's Face
     inline btSoftBody::Face* getSensedSoftBodyFace(uint idx){return m_rayTracerResults[idx].m_sensedSoftBodyFace;}
@@ -1349,6 +1613,8 @@ public:
 
     void enableVisualization();
 
+    void visualize(bool show);
+
     virtual void fetchCommands(double dt);
 
 
@@ -1373,6 +1639,36 @@ class afProximitySensor: public afRayTracerSensor{
 public:
     // Constructor
     afProximitySensor(afWorldPtr a_afWorld, afModelPtr a_modelPtr);
+};
+
+
+///
+/// \brief This is an implementation of Sleep function that tries to adjust sleep between each cycle to maintain
+/// the desired loop frequency. This class has been inspired from ROS Rate Sleep written by Eitan Marder-Eppstein
+///
+class afRate{
+public:
+    afRate(int a_freq){
+        m_cycle_time = 1.0 / double(a_freq);
+        m_rateClock.start();
+        m_next_expected_time = m_rateClock.getCurrentTimeSeconds() + m_cycle_time;
+    }
+    bool sleep(){
+        double cur_time = m_rateClock.getCurrentTimeSeconds();
+        if (cur_time >= m_next_expected_time){
+            m_next_expected_time = cur_time + m_cycle_time;
+            return true;
+        }
+        while(m_rateClock.getCurrentTimeSeconds() <= m_next_expected_time){
+
+        }
+        m_next_expected_time = m_rateClock.getCurrentTimeSeconds() + m_cycle_time;
+        return true;
+    }
+private:
+    double m_next_expected_time;
+    double m_cycle_time;
+    cPrecisionClock m_rateClock;
 };
 
 
@@ -1404,7 +1700,7 @@ public:
 
     virtual bool createFromAttribs(afResistanceSensorAttributes* a_attribs);
 
-    virtual void update();
+    virtual void update(double dt);
 
 public:
     inline void setStaticContactFriction(const double& a_staticFriction){m_staticContactFriction = a_staticFriction;}
@@ -1483,17 +1779,7 @@ struct afNoiseModel{
         }
     }
 
-    void initialize(double mean, double std_dev, double bias, bool enable=true){
-        m_attribs.m_enable = enable;
-        m_attribs.m_mean = mean;
-        m_attribs.m_std_dev = std_dev;
-        m_attribs.m_bias = bias;
-
-        // Init Generator and Distribution
-
-        m_randomNumberGenerator = default_random_engine(time(0));
-        m_randomDistribution = new normal_distribution<double>(m_attribs.m_mean, m_attribs.m_std_dev);
-    }
+    void createFromAttribs(afNoiseModelAttribs* a_attribs);
 
     double generate(){
         if (m_randomDistribution){
@@ -1516,13 +1802,46 @@ protected:
 };
 
 
+struct afCameraWindowCallBacks{
+    afCameraWindowCallBacks(){
+        windowSizeCallback = nullptr;
+        errorCallback = nullptr;
+        keyCallback = nullptr;
+        mouseBtnsCallback = nullptr;
+        mousePosCallback = nullptr;
+        mouseScrollCallback = nullptr;
+        dragDropCallback = nullptr;
+    }
+    // callback when the window display is resized
+    void (*windowSizeCallback)(GLFWwindow*, int, int);
+
+    // callback when an error GLFW occurs
+    void (*errorCallback)(int, const char*);
+
+    // callback when a key is pressed
+    void (*keyCallback)(GLFWwindow*, int, int, int, int);
+
+    //callback for mouse buttons
+    void (*mouseBtnsCallback)(GLFWwindow*, int, int, int);
+
+    //callback for mouse positions
+    void (*mousePosCallback)(GLFWwindow*, double, double);
+
+    //callback for mouse positions
+    void (*mouseScrollCallback)(GLFWwindow*, double, double);
+
+    // Drag and drop callback
+    void (*dragDropCallback)(GLFWwindow*, int, const char**);
+};
+
+
 ///
 /// \brief The afCamera class
 ///
 class afCamera: public afBaseObject{
 public:
 
-    afCamera(afWorld* a_afWorld);
+    afCamera(afWorld* a_afWorld, afModelPtr a_modelPtr);
     ~afCamera();
 
     virtual void render(afRenderOptions &options);
@@ -1531,30 +1850,30 @@ public:
 
     void renderFrameBuffer();
 
-    void loadPreProcessingShaders();
+    void enableImagePublishing(afImageResolutionAttribs* imageAttribs);
 
-    void unloadPreProcessingShaders();
+    void enableDepthPublishing(afImageResolutionAttribs* imageAttribs, afNoiseModelAttribs* noiseAtt, afShaderAttributes* depthComputeShaderAttribs);
 
-    void preProcessingShadersUpdate();
+    void makeWindowFullScreen(bool a_fullscreen);
+
+    void destroyWindow();
 
     // Define the virtual method for camera
     virtual void fetchCommands(double dt);
 
     // Define the virtual method for camera
-    virtual void update();
+    virtual void update(double dt);
 
     // Initialize
     bool init();
 
     void updateLabels(afRenderOptions &options);
 
-    // Create the default camera. Implemented in case not additional cameras
-    // are define in the AMBF config file
-    bool createDefaultCamera();
-
-    cCamera* getInternalCamera(){return m_camera;}
+    cCamera* getInternalCamera();
 
     virtual bool createFromAttribs(afCameraAttributes* a_attribs);
+
+    bool assignWindowCallbacks(afCameraWindowCallBacks* a_callbacks);
 
     // Since we changed the order of ADF loading such that cameras are loaded before
     // bodies etc. we wouldn't be able to find a body defined as a parent in the
@@ -1578,7 +1897,7 @@ public:
     inline cVector3d getUpVector()    const { return m_localTransform.getLocalRot().getCol2(); }
 
     // This method returns the field view angle in Radians.
-    inline double getFieldViewAngle() const { return m_camera->getFieldViewAngleRad(); }
+    double getFieldViewAngle() const;
 
     // Get interval between the scene update and publishing of an image
     inline uint getImagePublishInterval(){return m_imagePublishInterval;}
@@ -1593,7 +1912,7 @@ public:
     void setDepthPublishInterval(uint a_interval);
 
     // This method enables or disables output image mirroring vertically.
-    inline void setMirrorVertical(bool a_enabled){m_camera->setMirrorVertical(a_enabled);}
+    void setWindowMirrorVertical(bool a_enabled);
 
     void computeDepthOnGPU();
 
@@ -1607,14 +1926,10 @@ public:
     void publishDepthPointCloud();
 
     // Front plane scene graph which can be used to attach widgets.
-    inline cWorld* getFrontLayer(){
-        return m_camera->m_frontLayer;
-    }
+    cWorld* getFrontLayer();
 
     // Front plane scene graph which can be used to attach widgets.
-    inline cWorld* getBackLayer(){
-        return m_camera->m_backLayer;
-    }
+    cWorld *getBackLayer();
 
     // Is this camera orthographic or not
     inline bool isOrthographic(){return m_orthographic;}
@@ -1645,7 +1960,7 @@ public:
     GLFWmonitor* m_monitor;
     static int s_numMonitors;
 
-    cStereoMode m_stereMode;
+    cStereoMode m_stereoMode;
 
     // Labels
     cLabel* m_graphicsDynamicsFreqLabel;
@@ -1698,7 +2013,26 @@ public:
     std::map<afRigidBodyPtr, cShaderProgramPtr> m_shaderProgramBackup;
 
 protected:
+    void createFrameBuffers(afImageResolutionAttribs* imageAttribs);
+
+    void createPreProcessingShaders(afShaderAttributes* preprocessingShaderAttribs);
+
+    void createImageTransport();
+
+    void createDepthTransport(afImageResolutionAttribs* imageAttribs);
+
+    void activatePreProcessingShaders();
+
+    void deactivatePreProcessingShaders();
+
+    void preProcessingShadersUpdate();
+
+protected:
+
+    bool m_frameBuffersCreated = false;
+
     cVector3d m_pos, m_posClutched;
+
     cMatrix3d m_rot, m_rotClutched;
 
     // This is the position that the camera is supposed to be looking at
@@ -1723,19 +2057,17 @@ protected:
     image_transport::Publisher m_imagePublisher;
 
     // Image Transport ROS Node
-    static ros::NodeHandle* s_rosNode;
+    ros::NodeHandle* m_rosNode;
 
-    // Flag to check if to check if ROS Node and CV ROS Node is initialized
-    static bool s_imageTransportInitialized;
 #endif
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     ambf_comm::ProjectionType m_projectionType;
     ambf_comm::ViewMode m_viewMode;
 #endif
 
     // Depth to Point Cloud Impl
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     sensor_msgs::PointCloud2::Ptr m_depthPointCloudMsg;
     sensor_msgs::PointCloud2Modifier* m_depthPointCloudModifier = nullptr;
     ros::Publisher m_depthPointCloudPub;
@@ -1793,24 +2125,23 @@ private:
 ///
 class afLight: public afBaseObject{
 public:
-    afLight(afWorld* a_afWorld);
+    afLight(afWorld* a_afWorld, afModelPtr a_modelPtr);
 
     virtual bool createFromAttribs(afLightAttributes* a_attribs);
 
-    // Default light incase no lights are defined in the AMBF Config file
-    bool createDefaultLight();
-
     virtual void fetchCommands(double dt);
 
-    virtual void update();
+    virtual void update(double dt);
 
     // Set direction of this light
     void setDir(const cVector3d& a_direction);
 
+    cGenericLight* getInternalLight();
+
 protected:
     cSpotLight* m_spotLight;
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     ambf_comm::LightType m_lightType;
 #endif
 };
@@ -1825,13 +2156,15 @@ public:
 
     cMultiPointPtr m_mpPtr;
 
+    int m_mpSize = 0;
+
     virtual void fetchCommands(double){}
 
-    virtual void update();
+    virtual void update(double dt);
 
     std::string m_topicName;
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     ambf_comm::PointCloudHandlerPtr m_pcCommPtr;
 #endif
 };
@@ -1851,25 +2184,11 @@ struct afRenderOptions{
 ///
 /// \brief The afWorld class
 ///
-class afWorld: public afComm{
+class afWorld: public afIdentification, public afComm, public afModelManager{
 
     friend class afModel;
 
 public:
-
-    // Template method to add various types of objects
-    template<typename T, typename TMap>
-    bool addAFObject(T a_obj, string a_name, TMap* a_map);
-
-    bool checkIfExists(afBaseObject* a_obj);
-
-     // Template method to get a specific type of object
-    template <typename T, typename TMap>
-    T getAFObject(string a_name, TMap* a_map, bool suppress_warning);
-
-     // Template method to get all objects of specific type
-    template <typename Tvec, typename TMap>
-    Tvec getAFObjects(TMap* tMap);
 
     afWorld(string a_global_namespace);
 
@@ -1877,7 +2196,19 @@ public:
 
     virtual bool createFromAttribs(afWorldAttributes* a_attribs);
 
+    virtual bool loadPlugins(vector<afPluginAttributes>* pluginAttribs);
+
     virtual void render(afRenderOptions &options);
+
+    cWorld* getChaiWorld();
+
+    afCameraPtr getAssociatedCamera(GLFWwindow* window);
+
+    void makeCameraWindowsFullScreen(bool a_fullscreen);
+
+    void makeCameraWindowsMirrorVertical(bool a_mirrorVertical);
+
+    void destroyCameraWindows();
 
     bool createDefaultWorld();
 
@@ -1940,103 +2271,17 @@ public:
     //! This method updates the position and orientation from Bullet models to CHAI3D models.
     virtual void updateSceneObjects();
 
+    void pluginsGraphicsUpdate();
+
+    void pluginsPhysicsUpdate(double dt);
+
     void addSceneObjectToWorld(cGenericObject* a_cObject);
 
     void removeSceneObjectFromWorld(cGenericObject* a_cObject);
 
-    string addAFLight(afLightPtr a_rb);
-
-    string addAFCamera(afCameraPtr a_rb);
-
-    string addAFRigidBody(afRigidBodyPtr a_rb);
-
-    string addAFSoftBody(afSoftBodyPtr a_sb);
-
-    string addAFGhostObject(afGhostObjectPtr a_go);
-
-    string addAFJoint(afJointPtr a_jnt);
-
-    string addAFActuator(afActuatorPtr a_actuator);
-
-    string addAFSensor(afSensorPtr a_sensor);
-
-    string addAFModel(afModelPtr a_model);
-
-    string addAFVehicle(afVehiclePtr a_vehicle);
-
     // This method build the collision graph based on the collision group numbers
     // defined in the bodies
     void buildCollisionGroups();
-
-
-    afLightPtr getAFLight(string a_name, bool suppress_warning=false);
-
-    afCameraPtr getAFCamera(string a_name, bool suppress_warning=false);
-
-    afRigidBodyPtr getAFRigidBody(string a_name, bool suppress_warning=false);
-
-    afRigidBodyPtr getAFRigidBody(btRigidBody* a_body, bool suppress_warning=false);
-
-    afSoftBodyPtr getAFSoftBody(string a_name, bool suppress_warning=false);
-
-    afSoftBodyPtr getAFSoftBody(btSoftBody* a_body, bool suppress_warning=false);
-
-    afGhostObjectPtr getAFGhostObject(string a_name, bool suppress_warning=false);
-
-    afGhostObjectPtr getAFGhostObject(btGhostObject* a_body, bool suppress_warning=false);
-
-    afJointPtr getAFJoint(string a_name);
-
-    afActuatorPtr getAFActuator(string a_name);
-
-    afSensorPtr getAFSensor(string a_name);
-
-    afModelPtr getAFModel(string a_name, bool suppress_warning=false);
-
-    afVehiclePtr getAFVehicle(string a_name, bool suppress_warning=false);
-
-
-    inline afLightMap* getAFLightMap(){return &m_afLightMap;}
-
-    inline afCameraMap* getAFCameraMap(){return &m_afCameraMap;}
-
-    inline afRigidBodyMap* getAFRigidBodyMap(){return &m_afRigidBodyMap;}
-
-    inline afSoftBodyMap* getAFSoftBodyMap(){return &m_afSoftBodyMap;}
-
-    inline afGhostObjectMap* getAFGhostObjectMap(){return &m_afGhostObjectMap;}
-
-    inline afJointMap* getAFJointMap(){return &m_afJointMap;}
-
-    inline afActuatorMap* getAFActuatorMap(){return &m_afActuatorMap;}
-
-    inline afSensorMap* getAFSensorMap(){return &m_afSensorMap;}
-
-    inline afModelMap* getAFModelMap(){return &m_afModelMap;}
-
-    inline afVehicleMap* getAFVehicleMap(){return &m_afVehicleMap;}
-
-
-    afLightVec  getAFLighs();
-
-    afCameraVec getAFCameras();
-
-    afRigidBodyVec getAFRigidBodies();
-
-    afSoftBodyVec getAFSoftBodies();
-
-    afGhostObjectVec getAFGhostObjects();
-
-    afJointVec getAFJoints();
-
-    afActuatorVec getAFActuators();
-
-    afSensorVec getAFSensors();
-
-    afModelVec getAFMultiBodies();
-
-    afVehicleVec getAFVehicles();
-
 
     string resolveGlobalNamespace(string a_name);
 
@@ -2045,10 +2290,6 @@ public:
     void setGlobalNamespace(string a_namespace);
 
     virtual void fetchCommands(double dt);
-
-    // Get the root parent of a body, if null is provided, returns the parent body
-    // with most children
-    afRigidBodyPtr getRootAFRigidBody(afRigidBodyPtr a_bodyPtr = nullptr);
 
     bool pickBody(const cVector3d& rayFromWorld, const cVector3d& rayToWorld);
 
@@ -2060,24 +2301,26 @@ public:
 
     void loadSkyBox();
 
+    void runHeadless(bool value);
+
+    bool isHeadless();
+
+public:
+
+    GLFWwindow* m_mainWindow;
+
     // The collision groups are sorted by integer indices. A group is an array of
     // rigid bodies that collide with each other. The bodies in one group
     // are not meant to collide with bodies from another group. Lastly
     // a body can be a part of multiple groups
     map<uint, vector<afInertialObjectPtr> > m_collisionGroups;
 
-public:
-
-    vector<afBaseObjectPtr> m_childrenAFObjects;
-
-    GLFWwindow* m_mainWindow;
+    afCameraWindowCallBacks m_cameraWindowCallbacks;
 
     //data for picking objects
     class btRigidBody* m_pickedBulletRigidBody = nullptr;
 
-    afRigidBodyPtr m_pickedAFRigidBody = nullptr;
-
-    cMaterialPtr m_pickedAFRigidBodyColor; // Original color of picked body for reseting later
+    afRigidBodyPtr m_pickedRigidBody = nullptr;
 
     cMaterial m_pickColor; // The color to be applied to the picked body
 
@@ -2133,8 +2376,6 @@ public:
 
     map<string, afPointCloudPtr> m_pcMap;
 
-    cWorld* m_chaiWorld = nullptr;
-
     // Bullet dynamics world.
     btDiscreteDynamicsWorld* m_bulletWorld = nullptr;
 
@@ -2166,26 +2407,6 @@ public:
 
 protected:
 
-    afLightMap m_afLightMap;
-
-    afCameraMap m_afCameraMap;
-
-    afRigidBodyMap m_afRigidBodyMap;
-
-    afSoftBodyMap m_afSoftBodyMap;
-
-    afGhostObjectMap m_afGhostObjectMap;
-
-    afJointMap m_afJointMap;
-
-    afActuatorMap m_afActuatorMap;
-
-    afSensorMap m_afSensorMap;
-
-    afModelMap m_afModelMap;
-
-    afVehicleMap m_afVehicleMap;
-
     // If this string is set, it will force itself to preeced all nampespaces
     // regardless of whether any namespace starts with a '/' or not.
     string m_global_namespace;
@@ -2205,6 +2426,8 @@ protected:
     // Maximum number of iterations.
     int m_integrationMaxIterations;
 
+    afWorldPluginManager m_pluginManager;
+
 private:
 
     static double m_enclosureL;
@@ -2221,6 +2444,10 @@ private:
     // Step the simulation by this many steps
     // Used when the Physics is paused
     int m_manualStepPhx = 0;
+
+    cWorld* m_chaiWorld = nullptr;
+
+    bool m_headless = false;
 };
 
 
@@ -2235,7 +2462,7 @@ struct afPickingConstraintData{
 ///
 /// \brief The afModel class
 ///
-class afModel: public afBaseObject{
+class afModel: public afIdentification, public afObjectManager{
 
     friend class afRigidBody;
     friend class afSoftBody;
@@ -2250,15 +2477,21 @@ public:
 
     virtual bool createFromAttribs(afModelAttributes* a_attribs);
 
-    virtual void fetchCommands(double dt){}
+    virtual bool loadPlugins(vector<afPluginAttributes>* pluginAttribs);
 
-    afRigidBodyMap* getRigidBodyMap(){return &m_afRigidBodyMapLocal;}
-    afSoftBodyMap* getSoftBodyMap(){return &m_afSoftBodyMapLocal;}
-    afGhostObjectMap* getGhostObjectMap(){return &m_afGhostObjectMapLocal;}
-    afVehicleMap* getVehicleMap(){return &m_afVehicleMapLocal;}
-    afJointMap* getJointMap(){return &m_afJointMapLocal;}
-    afActuatorMap* getActuatorMap(){return &m_afActuatorMapLocal;}
-    afSensorMap* getSensorMap(){return &m_afSensorMapLocal;}
+    virtual void fetchCommands(double dt);
+
+    virtual void update(double dt);
+
+    virtual void updateGlobalPose();
+
+    virtual void updateSceneObjects();
+
+    virtual void loadShaderProgram();
+
+    void pluginsGraphicsUpdate();
+
+    void pluginsPhysicsUpdate(double dt);
 
     // We can have multiple bodies connected to a single body.
     // There isn't a direct way in bullet to disable collision
@@ -2269,19 +2502,16 @@ public:
     // debugging purposes
     void ignoreCollisionChecking();
 
-    // Get Rigid Body or Soft Body belonging to this Specific Model
-    afRigidBodyPtr getAFRigidBodyLocal(string a_name, bool suppress_warning=false);
-
-    afSoftBodyPtr getAFSoftBodyLocal(string a_name);
-
-    // Get the root parent of a body, if null is provided, returns the parent body
-    // with most children. This method is similar to the corresponding afWorld
-    // method however it searches in the local model space than the world space
-    afRigidBodyPtr getRootAFRigidBodyLocal(afRigidBodyPtr a_bodyPtr = nullptr);
-
     // Global Constraint ERP and CFM
     double m_jointERP = 0.1;
     double m_jointCFM = 0.1;
+
+    afShaderAttributes m_shaderAttribs;
+
+    cShaderProgramPtr m_shaderProgram;
+
+    // Plugin Manager
+    afModelPluginManager m_pluginManager;
 
 protected:
 
@@ -2290,16 +2520,8 @@ protected:
     string getNonCollidingIdx(string a_body_name, const T* tMap);
     void remapName(string &name, string remap_idx_str);
 
-private:
-    // The world has a list of all the bodies and joints belonging to all multibodies
-    // The model has list of bodies and joints defined for this specific model
-    afRigidBodyMap m_afRigidBodyMapLocal;
-    afSoftBodyMap m_afSoftBodyMapLocal;
-    afGhostObjectMap m_afGhostObjectMapLocal;
-    afVehicleMap m_afVehicleMapLocal;
-    afJointMap m_afJointMapLocal;
-    afActuatorMap m_afActuatorMapLocal;
-    afSensorMap m_afSensorMapLocal;
+protected:
+    afWorldPtr m_afWorld;
 };
 
 
@@ -2323,7 +2545,7 @@ public:
 
     virtual bool createFromAttribs(afVehicleAttributes* a_attribs);
 
-    virtual void update();
+    virtual void update(double dt);
 
     virtual void fetchCommands(double dt);
 
@@ -2335,6 +2557,39 @@ protected:
     uint m_numWheels = 0;
     vector<afWheel> m_wheels;
     vector<afWheelAttributes> m_wheelAttribs;
+};
+
+
+class afVolume: public afBaseObject{
+public:
+    afVolume(afWorldPtr a_afWorld, afModelPtr a_modelPtr);
+
+    ~afVolume();
+
+    virtual bool createFromAttribs(afVolumeAttributes* a_attribs);
+
+    virtual void update(double dt);
+
+    virtual void fetchCommands(double dt);
+
+    virtual cShaderProgramPtr getShaderProgram();
+
+    virtual void setShaderProgram(cShaderProgramPtr a_program);
+
+    virtual void backupShaderProgram();
+
+    virtual void restoreShaderProgram();
+
+    cVoxelObject* getInternalVolume();
+
+protected:
+    afVolumeAttributes m_attribs;
+    cVoxelObject* m_voxelObject;
+    cMultiImagePtr m_multiImage;
+
+private:
+    int m_previousRenderingMode=0;
+    bool m_prevLinearInterpolationFlag=false;
 };
 
 

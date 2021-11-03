@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -35,8 +35,8 @@
     ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -60,7 +60,7 @@ public:
     ADFLoaderInterface();
     ~ADFLoaderInterface();
 
-    bool loadObjectAttribs(std::string a_filepath, std::string a_objectName, afObjectType a_type, afBaseObjectAttributes* attribs);
+    bool loadObjectAttribs(std::string a_filepath, std::string a_objectName, afType a_type, afBaseObjectAttributes* attribs);
 
     // Load World Attribs
     bool loadWorldAttribs(std::string a_filepath, afWorldAttributes* attribs);

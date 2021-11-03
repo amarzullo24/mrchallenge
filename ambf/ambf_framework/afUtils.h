@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -48,6 +47,8 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <vector>
+#include <list>
 
 using namespace std;
 
@@ -69,6 +70,9 @@ public:
         int occurances = 0;
         std::string remap_string = "" ;
         std::stringstream ss;
+        if (tMap == nullptr){
+            return remap_string;
+        }
         if (tMap->find(a_body_name) == tMap->end()){
             return remap_string;
         }
@@ -114,6 +118,33 @@ public:
     static void debugPrint(int line, string filename){
         cerr << "Line: "<< line << ", File: " << filename << endl;
     }
+
+    template <class T>
+    ///
+    /// \brief splitString: Set the template as std::list<string> or std::vector<string>
+    /// \param a_str
+    /// \param delimiter
+    /// \return
+    ///
+    static const T splitString(string &a_str, const string &delimiter)
+    {
+        T split_str;
+        size_t pos = 0;
+        std::string token;
+        while ((pos = a_str.find(delimiter)) != std::string::npos) {
+            token = a_str.substr(0, pos);
+            split_str.push_back(token);
+            a_str.erase(0, pos + delimiter.length());
+        }
+        // To account for the case if a single path was specified without adding any delimiter
+        if (a_str.empty() == false){
+            split_str.push_back(a_str);
+        }
+        return split_str;
+    }
+
+
+    static string loadFileContents(const string &a_filepath);
 };
 
 }

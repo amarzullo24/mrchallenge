@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -70,6 +69,8 @@ afVector3d& operator<< (afVector3d& lhs, const btVector3& rhs);
 afVector3d& operator<< (afVector3d& lhs, const cVector3d& rhs);
 afVector3d& operator* (cTransform& lhs, afVector3d& rhs);
 afVector3d& operator* (btTransform& lhs, afVector3d& rhs);
+afMatrix3d& operator<< (afMatrix3d& lhs, const btMatrix3x3& rhs);
+afMatrix3d& operator<< (afMatrix3d& lhs, const cMatrix3d& rhs);
 afTransform& operator<< (afTransform& lhs, const btTransform& rhs);
 afTransform& operator<< (afTransform& lhs, const cTransform& rhs);
 

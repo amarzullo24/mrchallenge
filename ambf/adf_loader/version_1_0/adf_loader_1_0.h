@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -53,33 +52,35 @@ using namespace std;
 
 namespace adf_loader_1_0{
 
-class ADFUtils: public ADFUtilsBase{
+class ADFUtils{
 public:
-    virtual bool getCartControllerAttribsFromNode(YAML::Node* a_node, afCartesianControllerAttributes* attribs);
+    static bool getCartControllerAttribsFromNode(YAML::Node* a_node, afCartesianControllerAttributes* attribs);
 
-    virtual bool getCollisionAttribsFromNode(YAML::Node* a_node, afCollisionAttributes* attribs);
+    static bool getCollisionAttribsFromNode(YAML::Node* a_node, afCollisionAttributes* attribs);
 
-    virtual bool getCommunicationAttribsFromNode(YAML::Node* a_node, afCommunicationAttributes* attribs);
+    static bool getCommunicationAttribsFromNode(YAML::Node* a_node, afCommunicationAttributes* attribs);
 
-    virtual bool getHierarchyAttribsFromNode(YAML::Node* a_node, afHierarchyAttributes* attribs);
+    static bool getHierarchyAttribsFromNode(YAML::Node* a_node, afHierarchyAttributes* attribs);
 
-    virtual bool getIdentificationAttribsFromNode(YAML::Node* a_node, afIdentificationAttributes* attribs);
+    static bool getIdentificationAttribsFromNode(YAML::Node* a_node, afIdentificationAttributes* attribs);
 
-    virtual bool getInertialAttrisFromNode(YAML::Node* a_node, afInertialAttributes* attribs);
+    static bool getInertialAttrisFromNode(YAML::Node* a_node, afInertialAttributes* attribs);
 
-    virtual bool getJointControllerAttribsFromNode(YAML::Node* a_node, afJointControllerAttributes* attribs);
+    static bool getJointControllerAttribsFromNode(YAML::Node* a_node, afJointControllerAttributes* attribs);
 
-    virtual bool getKinematicAttribsFromNode(YAML::Node* a_node, afKinematicAttributes* attribs);
+    static bool getKinematicAttribsFromNode(YAML::Node* a_node, afKinematicAttributes* attribs);
 
-    virtual bool getColorAttribsFromNode(YAML::Node* a_node, afColorAttributes* a_color);
+    static bool getColorAttribsFromNode(YAML::Node* a_node, afColorAttributes* a_color);
 
-    virtual bool getShaderAttribsFromNode(YAML::Node* a_node, afShaderAttributes* attribs);
+    static bool getShaderAttribsFromNode(YAML::Node* a_node, afShaderAttributes* attribs);
 
-    virtual bool getVisualAttribsFromNode(YAML::Node* a_node, afVisualAttributes* attribs);
+    static bool getVisualAttribsFromNode(YAML::Node* a_node, afVisualAttributes* attribs);
 
-    virtual bool getSurfaceAttribsFromNode(YAML::Node* a_node, afSurfaceAttributes* attribs);
+    static bool getSurfaceAttribsFromNode(YAML::Node* a_node, afSurfaceAttributes* attribs);
 
-    virtual bool getWheelAttribsFromNode(YAML::Node* a_node, afWheelAttributes* attribs);
+    static bool getWheelAttribsFromNode(YAML::Node* a_node, afWheelAttributes* attribs);
+
+    static bool getPluginAttribsFromNode(YAML::Node* a_node, vector<afPluginAttributes>* attribs);
 
     static afActuatorType getActuatorTypeFromString(const string & a_str);
 
@@ -99,7 +100,6 @@ public:
     // Copy data specified via ADF node
     static bool copyPrimitiveShapeData(YAML::Node* shapeNode, afPrimitiveShapeAttributes* attribs);
 
-
     static afVector3d positionFromNode(YAML::Node* node);
 
     static afMatrix3d rotationFromNode(YAML::Node* node);
@@ -118,7 +118,7 @@ public:
 
     virtual string getLoaderVersion();
 
-    virtual bool loadObjectAttribs(YAML::Node* a_node, string a_objName, afObjectType a_objType, afBaseObjectAttributes* a_objAttribs);
+    virtual bool loadObjectAttribs(YAML::Node* a_node, string a_objName, afType a_objType, afBaseObjectAttributes* a_objAttribs);
 
     // Load Light
     virtual bool loadLightAttribs(YAML::Node* a_node, afLightAttributes* attribs);
@@ -155,6 +155,9 @@ public:
 
     // Load sensor from a YAML::Node
     virtual bool loadVehicleAttribs(YAML::Node* a_node, afVehicleAttributes* attribs);
+
+    // Load sensor from a YAML::Node
+    virtual bool loadVolumeAttribs(YAML::Node* a_node, afVolumeAttributes* attribs);
 
     // Load Input Device Attributes
     virtual bool loadInputDeviceAttribs(YAML::Node* a_node, afInputDeviceAttributes *attribs);

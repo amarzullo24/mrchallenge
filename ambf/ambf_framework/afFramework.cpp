@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -76,9 +75,7 @@ int afCamera::s_windowIdx = 0;
 btGhostPairCallback* afGhostObject::m_bulletGhostPairCallback = nullptr;
 
 #ifdef AF_ENABLE_OPEN_CV_SUPPORT
-ros::NodeHandle* afCamera::s_rosNode = nullptr;
 image_transport::ImageTransport* afCamera::s_imageTransport = nullptr;
-bool afCamera::s_imageTransportInitialized = false;
 #endif
 //------------------------------------------------------------------------------
 
@@ -503,14 +500,14 @@ cMaterial afMaterialUtils::createFromAttribs(afColorAttributes *a_color)
 bool afVisualUtils::createFromAttribs(afVisualAttributes *attribs, cMultiMesh *mesh, string obj_name){
     if (attribs->m_geometryType == afGeometryType::MESH){
         if (mesh->loadFromFile(attribs->m_meshFilepath.c_str()) ){
-//            mesh->scale(m_scale);
+            //            mesh->scale(m_scale);
             mesh->setUseDisplayList(true);
-//            m_visualMesh->markForUpdate(false);
+            //            m_visualMesh->markForUpdate(false);
         }
         else{
             cerr << "WARNING: OBJECT "
-                      << obj_name
-                      << "'s mesh \"" << attribs->m_meshFilepath.c_str() << "\" not found\n";
+                 << obj_name
+                 << "'s mesh \"" << attribs->m_meshFilepath.c_str() << "\" not found\n";
             return false;
         }
     }
@@ -524,13 +521,16 @@ bool afVisualUtils::createFromAttribs(afVisualAttributes *attribs, cMultiMesh *m
         }
     }
 
-    cMaterial mat = afMaterialUtils::createFromAttribs(&attribs->m_colorAttribs);
-    mesh->setMaterial(mat);
-    // Important to set the transparency after setting the material, otherwise the alpha
-    // channel ruins the Z-buffer depth testing in some way.
-    mesh->setTransparencyLevel(attribs->m_colorAttribs.m_alpha);
-    mesh->setShowEnabled(attribs->m_visible);
+    mesh->m_name = obj_name;
 
+    if (attribs->m_colorAttribs.m_useMaterial){
+        cMaterial mat = afMaterialUtils::createFromAttribs(&attribs->m_colorAttribs);
+        mesh->setMaterial(mat);
+        // Important to set the transparency after setting the material, otherwise the alpha
+        // channel ruins the Z-buffer depth testing in some way.
+        mesh->setTransparencyLevel(attribs->m_colorAttribs.m_alpha);
+        mesh->setShowEnabled(attribs->m_visible);
+    }
     return true;
 }
 
@@ -544,38 +544,37 @@ bool afVisualUtils::createFromAttribs(afVisualAttributes *attribs, cMultiMesh *m
 /// \param a_max_freq
 /// \param time_out
 ///
-void afComm::afCreateCommInstance(afObjectType type, string a_name, string a_namespace, int a_min_freq, int a_max_freq, double time_out){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+void afComm::afCreateCommInstance(afType type, string a_name, string a_namespace, int a_min_freq, int a_max_freq, double time_out){
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     switch (type) {
-    case afObjectType::ACTUATOR:
+    case afType::ACTUATOR:
         m_afActuatorCommPtr.reset(new ambf_comm::Actuator(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::CAMERA:
+    case afType::CAMERA:
         m_afCameraCommPtr.reset(new ambf_comm::Camera(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::LIGHT:
+    case afType::LIGHT:
         m_afLightCommPtr.reset(new ambf_comm::Light(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::OBJECT:
+    case afType::OBJECT:
         m_afObjectCommPtr.reset(new ambf_comm::Object(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::RIGID_BODY:
+    case afType::RIGID_BODY:
         m_afRigidBodyCommPtr.reset(new ambf_comm::RigidBody(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::SENSOR:
+    case afType::SENSOR:
         m_afSensorCommPtr.reset(new ambf_comm::Sensor(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::VEHICLE:
+    case afType::VEHICLE:
         m_afVehicleCommPtr.reset(new ambf_comm::Vehicle(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
-    case afObjectType::WORLD:
+    case afType::WORLD:
         m_afWorldCommPtr.reset(new ambf_comm::World(a_name, a_namespace, a_min_freq, a_max_freq, time_out));
         break;
     default:
         cerr << "ERROR! COMMUNICATION TYPE FOR OBJECT NAMED " << a_name << " NOT IMPLEMENTED YET" << endl;
         break;
     }
-    m_commType = type;
 #endif
 }
 
@@ -586,7 +585,7 @@ void afComm::afCreateCommInstance(afObjectType type, string a_name, string a_nam
 /// \param a_sim_time
 ///
 void afComm::afUpdateTimes(const double a_wall_time, const double a_sim_time){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afObjectCommPtr.get() != nullptr){
         m_afObjectCommPtr->set_wall_time(a_wall_time);
         m_afObjectCommPtr->set_sim_time(a_sim_time);
@@ -730,22 +729,22 @@ btVector3 afCartesianController::computeOutput<btVector3, btMatrix3x3>(const btM
     btVector3 output(0, 0, 0);
 
     if (isEnabled()){
-    btVector3 error_cur, error_prev;
-    btMatrix3x3 dRot_prev;
-    btQuaternion dRotQuat, dRotQuat_prev;
-    dRot_prev = m_dRot;
-    dRot_prev.getRotation(dRotQuat_prev);
-    error_prev = dRotQuat_prev.getAxis() * dRotQuat_prev.getAngle();
+        btVector3 error_cur, error_prev;
+        btMatrix3x3 dRot_prev;
+        btQuaternion dRotQuat, dRotQuat_prev;
+        dRot_prev = m_dRot;
+        dRot_prev.getRotation(dRotQuat_prev);
+        error_prev = dRotQuat_prev.getAxis() * dRotQuat_prev.getAngle();
 
-    m_dRot = process_val.transpose() * set_point;
-    m_dRot.getRotation(dRotQuat);
-    error_cur = dRotQuat.getAxis() * dRotQuat.getAngle();
+        m_dRot = process_val.transpose() * set_point;
+        m_dRot.getRotation(dRotQuat);
+        error_cur = dRotQuat.getAxis() * dRotQuat.getAngle();
 
-    output = (P_ang * error_cur * ts) + (D_ang * (error_cur - error_prev) / dt);
+        output = (P_ang * error_cur * ts) + (D_ang * (error_cur - error_prev) / dt);
 
-    // Important to transform the torque in the world frame as its represented
-    // in the body frame from the above computation
-    output = process_val * output;
+        // Important to transform the torque in the world frame as its represented
+        // in the body frame from the above computation
+        output = process_val * output;
     }
     else{
         // Maybe throw a console warning to notify the user that this controller is disabled
@@ -789,23 +788,23 @@ template<>
 cVector3d afCartesianController::computeOutput<cVector3d, cMatrix3d>(const cMatrix3d &process_val, const cMatrix3d &set_point, const double &dt, const double &ts){
     cVector3d output(0, 0, 0);
     if (isEnabled()){
-    cVector3d error_cur, error_prev;
-    cMatrix3d dRot_prev;
-    cVector3d e_axis, e_axis_prev;
-    double e_angle, e_angle_prev;
-    dRot_prev = m_dRot_cvec;
-    dRot_prev.toAxisAngle(e_axis_prev, e_angle_prev);
-    error_prev = e_axis_prev * e_angle_prev;
+        cVector3d error_cur, error_prev;
+        cMatrix3d dRot_prev;
+        cVector3d e_axis, e_axis_prev;
+        double e_angle, e_angle_prev;
+        dRot_prev = m_dRot_cvec;
+        dRot_prev.toAxisAngle(e_axis_prev, e_angle_prev);
+        error_prev = e_axis_prev * e_angle_prev;
 
-    m_dRot_cvec = cTranspose(process_val) * set_point;
-    m_dRot_cvec.toAxisAngle(e_axis, e_angle);
-    error_cur = e_axis * e_angle;
+        m_dRot_cvec = cTranspose(process_val) * set_point;
+        m_dRot_cvec.toAxisAngle(e_axis, e_angle);
+        error_cur = e_axis * e_angle;
 
-    output = (P_ang * error_cur * ts) + (D_ang * (error_cur - error_prev) / dt);
+        output = (P_ang * error_cur * ts) + (D_ang * (error_cur - error_prev) / dt);
 
-    // Important to transform the torque in the world frame as its represented
-    // in the body frame from the above computation
-    output = process_val * output;
+        // Important to transform the torque in the world frame as its represented
+        // in the body frame from the above computation
+        output = process_val * output;
     }
     else{
         // Maybe throw a console warning to notify the user that this controller is disabled
@@ -823,18 +822,99 @@ template<>
 ///
 btTransform afCartesianController::computeOutput<btTransform, btTransform>(const btTransform &process_val, const btTransform &set_point, const double &dt, const double &tsf){
     // Not implemented yet
+    return btTransform();
 }
+
+
+///
+/// \brief afIdentification::afIdentification
+/// \param a_type
+///
+afIdentification::afIdentification(afType a_type): m_type(a_type)
+{
+
+}
+
+
+///
+/// \brief afIdentification::getTypeAsStr
+/// \return
+///
+string afIdentification::getTypeAsStr(){
+    switch (m_type) {
+    case afType::ACTUATOR:
+        return "ACTUATOR";
+        break;
+    case afType::CAMERA:
+        return "CAMERA";
+        break;
+    case afType::GHOST_OBJECT:
+        return "GHOST_OBJECT";
+        break;
+    case afType::INPUT_DEVICE:
+        return "INPUT_DEVICE";
+        break;
+    case afType::INVALID:
+        return "INVALID";
+        break;
+    case afType::JOINT:
+        return "JOINT";
+        break;
+    case afType::LIGHT:
+        return "LIGHT";
+        break;
+    case afType::MODEL:
+        return "MODEL";
+        break;
+    case afType::OBJECT:
+        return "OBJECT";
+        break;
+    case afType::POINT_CLOUD:
+        return "POINT_CLOUD";
+        break;
+    case afType::RIGID_BODY:
+        return "RIGID_BODY";
+        break;
+    case afType::SENSOR:
+        return "SENSOR";
+        break;
+    case afType::SOFT_BODY:
+        return "SOFT_BODY";
+        break;
+    case afType::VEHICLE:
+        return "VEHICLE";
+        break;
+    case afType::WORLD:
+        return "WORLD";
+        break;
+    default:
+        cerr << "ERROR! SHOULD NOT HAPPEN" << endl;
+        return "";
+        break;
+    }
+}
+
+string afIdentification::getName(){return m_name;}
+
+string afIdentification::getNamespace(){return m_namespace;}
+
+string afIdentification::getQualifiedName(){return m_namespace + m_name;}
+
+void afIdentification::setName(string a_name){m_name = a_name;}
+
+void afIdentification::setNamespace(string a_namespace){m_namespace = a_namespace; }
+
+string afIdentification::getQualifiedIdentifier(){return m_namespace + m_identifier;}
 
 
 ///
 /// \brief afObject::afObject
 /// \param a_afWorld
 ///
-afBaseObject::afBaseObject(afWorldPtr a_afWorld, afModelPtr a_afModel){
+afBaseObject::afBaseObject(afType a_type, afWorldPtr a_afWorld, afModelPtr a_afModel): afIdentification(a_type){
     m_afWorld = a_afWorld;
     m_modelPtr = a_afModel;
     m_parentObject = nullptr;
-    m_visualMesh = nullptr;
 }
 
 
@@ -843,14 +923,37 @@ afBaseObject::afBaseObject(afWorldPtr a_afWorld, afModelPtr a_afModel){
 /// \brief afObject::~afObject
 ///
 afBaseObject::~afBaseObject(){
+    m_pluginManager.close();
     for (int i=0; i<m_childrenSceneObjects.size(); i++){
         delete m_childrenSceneObjects[i];
     }
 }
 
-bool afBaseObject::createFromAttribs(afBaseObjectAttributes *a_attribs)
-{
 
+///
+/// \brief afBaseObject::createFromAttribs
+/// \param a_attribs
+/// \return
+///
+bool afBaseObject::createFromAttribs(afBaseObjectAttributes* a_attribs){
+    return false;
+}
+
+
+///
+/// \brief afBaseObject::loadPlugins
+/// \param pluginAttribs
+/// \return
+///
+bool afBaseObject::loadPlugins(vector<afPluginAttributes> *pluginAttribs){
+    for (int i = 0 ; i < pluginAttribs->size(); i++){
+        m_pluginManager.add((*pluginAttribs)[i].m_filename, (*pluginAttribs)[i].m_name, (*pluginAttribs)[i].m_path.c_str());
+    }
+
+    return true;
+}
+
+void afBaseObject::update(double dt){
 }
 
 
@@ -886,11 +989,6 @@ cTransform afBaseObject::getLocalTransform()
 cTransform afBaseObject::getGlobalTransform()
 {
     return m_globalTransform;
-}
-
-afBaseObjectPtr afBaseObject::getParentObject()
-{
-    return m_parentObject;
 }
 
 
@@ -994,8 +1092,9 @@ bool afBaseObject::addChildObject(afBaseObjectPtr a_afObject)
         return false;
     }
     // Remove any set parent of the child object first?
-//    a_afObject->clearParentObject();
+    //    a_afObject->clearParentObject();
     a_afObject->setParentObject(this);
+    m_childrenObjects.push_back(a_afObject);
     return true;
 }
 
@@ -1018,9 +1117,9 @@ void afBaseObject::toggleFrameVisibility(){
     for (it = m_childrenSceneObjects.begin(); it != m_childrenSceneObjects.end() ; ++it){
         (*it)->getChaiObject()->setShowFrame(!(*it)->getChaiObject()->getShowFrame());
     }
-//    if (m_visualMesh){
-//        m_visualMesh->setShowFrame(!m_visualMesh->getShowFrame());
-//    }
+    //    if (m_visualMesh){
+    //        m_visualMesh->setShowFrame(!m_visualMesh->getShowFrame());
+    //    }
 }
 
 
@@ -1081,6 +1180,7 @@ bool afBaseObject::addChildSceneObject(afSceneObject *a_object)
 
     // the object does not have any parent yet, so we can add it as a child
     // to current object.
+    a_object->getChaiObject()->m_name = getQualifiedName();
     m_childrenSceneObjects.push_back(a_object);
     return true;
 }
@@ -1145,6 +1245,11 @@ bool afBaseObject::removeChildSceneObject(afSceneObject *a_object, bool removeFr
     return false;
 }
 
+
+///
+/// \brief afBaseObject::removeAllChildSceneObjects
+/// \param removeFromGraph
+///
 void afBaseObject::removeAllChildSceneObjects(bool removeFromGraph){
     std::vector<afSceneObject*>::iterator it;
 
@@ -1153,6 +1258,10 @@ void afBaseObject::removeAllChildSceneObjects(bool removeFromGraph){
     }
 }
 
+
+///
+/// \brief afBaseObject::updateSceneObjects
+///
 void afBaseObject::updateSceneObjects(){
     // Assuming that the global pose was computed prior to this call.
     vector<afSceneObject*>::iterator it;
@@ -1162,22 +1271,51 @@ void afBaseObject::updateSceneObjects(){
     }
 }
 
-void afBaseObject::updateGlobalPose(){
-    cTransform a_globalTransform = m_localTransform;
 
-    // Traverse up the parents to resolve the global pose
-    afBaseObjectPtr a_parentObject = getParentObject();
-    if (a_parentObject != nullptr){
-        do{
-            a_globalTransform = a_parentObject->getLocalTransform() * a_globalTransform;
-            a_parentObject = a_parentObject->getParentObject();
-        }
-        while(a_parentObject != nullptr);
-    }
-    m_globalTransform = a_globalTransform;
+///
+/// \brief afBaseObject::pluginsGraphicsUpdate
+///
+void afBaseObject::pluginsGraphicsUpdate()
+{
+    m_pluginManager.graphicsUpdate();
 }
 
-void afBaseObject::showVisualFrame()
+
+///
+/// \brief afBaseObject::pluginsPhysicsUpdate
+/// \param dt
+///
+void afBaseObject::pluginsPhysicsUpdate(double dt){
+    m_pluginManager.physicsUpdate(dt);
+}
+
+
+///
+/// \brief afBaseObject::updateGlobalPose
+/// \param a_forceUpdate
+/// \param a_parentTransform
+///
+void afBaseObject::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform){
+    if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
+        // Don't update the pose as this objects parent is
+        // responsible for it.
+        return;
+    }
+
+    m_globalTransform = a_parentTransform * m_localTransform;
+
+    vector<afBaseObjectPtr>::const_iterator it;
+
+    for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
+        (*it)->updateGlobalPose(true, m_globalTransform);
+    }
+}
+
+
+///
+/// \brief afBaseObject::calculateFrameSize
+///
+void afBaseObject::calculateFrameSize()
 {
     std::vector<afSceneObject*>::iterator it;
     for (it = m_childrenSceneObjects.begin(); it != m_childrenSceneObjects.end() ; ++it){
@@ -1196,73 +1334,253 @@ void afBaseObject::showVisualFrame()
 }
 
 
+afMeshObject::afMeshObject(afWorldPtr a_afWorld, afModelPtr a_afModel){
+    m_world = a_afWorld;
+    m_model = a_afModel;
+    m_visualMesh = nullptr;
+}
+
+///
+cMultiMesh *afMeshObject::getVisualObject(){
+    return m_visualMesh;
+}
+
+///
+/// \brief afBaseObject::isShaderProgramDefined
+/// \return
+///
+bool afMeshObject::isShaderProgramDefined(){
+    if (m_visualMesh == nullptr){
+        return false;
+    }
+
+    return m_visualMesh->getShaderProgram().get() == nullptr ? 0 : 1;
+}
+
+
+///
+/// \brief afBaseObject::isShaderProgramDefined
+/// \param a_mesh
+/// \return
+///
+bool afMeshObject::isShaderProgramDefined(cMesh *a_mesh)
+{
+    if (a_mesh == nullptr){
+        return false;
+    }
+
+    return a_mesh->getShaderProgram().get() == nullptr ? 0 : 1;
+}
+
+
 ///
 /// \brief afBaseObject::loadShaderProgram
 ///
-void afBaseObject::loadShaderProgram()
+void afMeshObject::loadShaderProgram()
 {
     bool valid = false;
     if (m_shaderAttribs.m_shaderDefined){
         cShaderProgramPtr shaderProgram;
-        shaderProgram = afShaderUtils::createFromAttribs(&m_shaderAttribs, getQualifiedName(), "OBJECT_SHADERS");
+        shaderProgram = afShaderUtils::createFromAttribs(&m_shaderAttribs, m_visualMesh->m_name, "OBJECT_SHADERS");
         m_visualMesh->setShaderProgram(shaderProgram);
         valid = true;
     }
-    else if (m_afWorld->m_shaderAttribs.m_shaderDefined){
-        if (m_afWorld->m_shaderProgram.get()){
-            m_visualMesh->setShaderProgram(m_afWorld->m_shaderProgram);
+    else if (m_model->m_shaderAttribs.m_shaderDefined){
+        if (m_model->m_shaderProgram.get()){
+            m_shaderAttribs.m_shaderDefined = true;
+            m_visualMesh->setShaderProgram(m_model->m_shaderProgram);
+            valid = true;
+        }
+    }
+    else if (m_world->m_shaderAttribs.m_shaderDefined){
+        if (m_world->m_shaderProgram.get()){
+            m_shaderAttribs.m_shaderDefined = true;
+            m_visualMesh->setShaderProgram(m_world->m_shaderProgram);
             valid = true;
         }
     }
 
     if (valid){
-        // Just empty Pts to let us use the shader
-        cGenericObject* go=nullptr;
-        cRenderOptions ro;
         cShaderProgramPtr shaderProgram = m_visualMesh->getShaderProgram();
-        shaderProgram->use(go, ro);
         // Set the ID for shadow and normal maps.
         shaderProgram->setUniformi("shadowMap", C_TU_SHADOWMAP);
-        bool enable_normal_mapping = false;
-        for (int i = 0 ; i < m_visualMesh->getNumMeshes() ; i++){
-            cMesh* mesh = m_visualMesh->getMesh(i);
-            if (mesh->m_normalMap.get() != nullptr){
-                if (mesh->m_normalMap->m_image.get() != nullptr){
-                    enable_normal_mapping = true;
-                }
-            }
-        }
-        if (enable_normal_mapping){
-            shaderProgram->setUniformi("normalMap", C_TU_NORMALMAP);
-            shaderProgram->setUniformi("vEnableNormalMapping", 1);
+        if (isNormalTextureDefined()){
+            enableShaderNormalMapping(true);
         }
         else{
-            shaderProgram->setUniformi("vEnableNormalMapping", 0);
+            enableShaderNormalMapping(false);
         }
     }
 }
 
-bool afBaseObject::resolveParenting(string a_parentName){
-    // If the parent name is not empty, override the objects parent name
-    if(a_parentName.empty() == false){
-        m_parentName = a_parentName;
-    }
-
-    // If the parent is empty, indiciate error and return
-    if (m_parentName.empty() == true){
-        return false;
-    }
-
-    // Should generalize this to not be just a rigid body that we may parent to.
-    afRigidBodyPtr pBody = m_afWorld->getAFRigidBody(m_parentName);
-    if (pBody){
-        pBody->addChildObject(this);
+///
+/// \brief afBaseObject::isNormalMapDefined
+/// \return
+///
+bool afMeshObject::isNormalMapDefined()
+{
+    if (m_visualMesh->m_normalMap.get() != nullptr){
         return true;
     }
     else{
-        cerr << "WARNING! " << m_name << ": COULDN'T FIND PARENT BODY NAMED\""
-             << m_parentName << "\"" <<endl;
         return false;
+    }
+}
+
+///
+/// \brief afBaseObject::isNormalMapDefined
+/// \param a_mesh
+/// \return
+///
+bool afMeshObject::isNormalMapDefined(cMesh *a_mesh)
+{
+    if (a_mesh->m_normalMap.get() != nullptr){
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+
+///
+/// \brief afBaseObject::isNormalTextureDefined
+/// \return
+///
+bool afMeshObject::isNormalTextureDefined()
+{
+    if (isNormalMapDefined()){
+        if (m_visualMesh->m_normalMap->m_image.get() != nullptr){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+    else{
+        return false;
+    }
+}
+
+
+///
+/// \brief afBaseObject::isNormalTextureDefined
+/// \param a_mesh
+/// \return
+///
+bool afMeshObject::isNormalTextureDefined(cMesh *a_mesh)
+{
+    if (isNormalMapDefined(a_mesh)){
+        if (a_mesh->m_normalMap->m_image.get() != nullptr){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+    else{
+        return false;
+    }
+}
+
+///
+/// \brief afBaseObject::enableShaderNormalMapping
+/// \param enable
+///
+void afMeshObject::enableShaderNormalMapping(bool enable)
+{
+    if (isShaderProgramDefined() == false){
+        return;
+    }
+
+    m_visualMesh->getShaderProgram()->setUniformi("normalMap", C_TU_NORMALMAP);
+    m_visualMesh->getShaderProgram()->setUniformi("vEnableNormalMapping", enable);
+
+    for (int i = 0 ; i < m_visualMesh->getNumMeshes() ; i++){
+        enableShaderNormalMapping(enable, m_visualMesh->getMesh(i));
+    }
+}
+
+///
+/// \brief afBaseObject::enableShaderNormalMapping
+/// \param enable
+/// \param a_mesh
+///
+void afMeshObject::enableShaderNormalMapping(bool enable, cMesh *a_mesh)
+{
+    if (isShaderProgramDefined(a_mesh) == false){
+        return;
+    }
+
+    if (isNormalTextureDefined(a_mesh)){
+        a_mesh->getShaderProgram()->setUniformi("normalMap", C_TU_NORMALMAP);
+        a_mesh->getShaderProgram()->setUniformi("vEnableNormalMapping", enable);
+    }
+}
+
+cShaderProgramPtr afMeshObject::getShaderProgram()
+{
+    if (m_visualMesh){
+        return m_visualMesh->getShaderProgram();
+    }
+    else{
+        return nullptr;
+    }
+}
+
+void afMeshObject::setShaderProgram(cShaderProgramPtr a_program)
+{
+    if (m_visualMesh){
+        m_visualMesh->setShaderProgram(a_program);
+    }
+    else{
+        cerr << "ERROR! MESH FOR THIS VISUAL OBJECT HAS NOT BEEN INITIALIZED YET. CAN'T SET SHADER PROGRAM" << endl;
+    }
+}
+
+void afMeshObject::backupShaderProgram()
+{
+    if (m_shaderProgramBackup == nullptr){
+        m_shaderProgramBackup = m_visualMesh->getShaderProgram();
+    }
+    else{
+        cerr << "WARNING! A SHADER PROGRAM FOR " << m_visualMesh->m_name <<
+                " IS ALREADY BACKED UP. RESTORE THE SHADER PROGRAM FIRST" << endl;
+    }
+}
+
+void afMeshObject::restoreShaderProgram()
+{
+    m_visualMesh->setShaderProgram(m_shaderProgramBackup);
+    m_shaderProgramBackup = nullptr;
+}
+
+///
+/// \brief afBaseObject::resolveParent
+/// \param a_parentName
+/// \param suppress_warning
+/// \return
+///
+bool afBaseObject::resolveParent(string a_parentName, bool suppress_warning){
+    // If the parent name is empty, return true as nothing to do
+    if(a_parentName.empty()){
+        return true;
+    }
+    else if ( (m_parentName.compare(a_parentName) == 0) && m_parentObject != nullptr ){
+        // The name of the parent is the same, ignore.
+        return true;
+    }
+    else{
+        // Should generalize this to not be just a rigid body that we may parent to.
+        afBaseObjectPtr pBody = m_afWorld->getBaseObject(m_parentName, suppress_warning);
+//        afBaseObjectPtr pBody = m_afWorld->getRigidBody(m_parentName, suppress_warning);
+        if (pBody){
+            pBody->addChildObject(this);
+            return true;
+        }
+        else{
+            return false;
+        }
     }
 }
 
@@ -1271,7 +1589,7 @@ bool afBaseObject::resolveParenting(string a_parentName){
 /// \brief afActuator::afActuator
 /// \param a_afWorld
 ///
-afActuator::afActuator(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(a_afWorld, a_modelPtr){
+afActuator::afActuator(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(afType::ACTUATOR, a_afWorld, a_modelPtr){
 }
 
 
@@ -1280,7 +1598,6 @@ afActuator::afActuator(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObjec
 /// \param a_afWorld
 ///
 afConstraintActuator::afConstraintActuator(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afActuator(a_afWorld, a_modelPtr){
-
 }
 
 afConstraintActuator::~afConstraintActuator(){
@@ -1308,28 +1625,15 @@ bool afConstraintActuator::createFromAttribs(afConstraintActuatorAttributes *a_a
     setMaxPublishFrequency(attribs.m_communicationAttribs.m_maxPublishFreq);
     setPassive(attribs.m_communicationAttribs.m_passive);
 
-    m_showActuator = attribs.m_visible;
-
-    if (m_showActuator){
-        if (m_actuatorVisual == nullptr){
-            cMesh* mesh = new cMesh();
-            cCreateSphere(mesh, attribs.m_visibleSize);
-            mesh->m_material->setYellowGold();
-            mesh->setShowEnabled(true);
-            mesh->setUseDisplayList(true);
-            mesh->markForUpdate(false);
-            m_actuatorVisual = mesh;
-            addChildSceneObject(m_actuatorVisual, cTransform());
-            m_afWorld->addSceneObjectToWorld(mesh);
-        }
-    }
+    m_show = attribs.m_visible;
+    m_visibleSize = attribs.m_visibleSize;
 
     // First search in the local space.
-    m_parentBody = m_modelPtr->getAFRigidBodyLocal(m_parentName, true);
+    m_parentBody = m_modelPtr->getRigidBody(m_parentName, true);
 
     if(!m_parentBody){
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_modelPtr->getActuatorMap());
-        m_parentBody = m_afWorld->getAFRigidBody(m_parentName + remap_idx);
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_modelPtr->getActuatorMap());
+        m_parentBody = m_afWorld->getRigidBody(m_parentName + remap_idx);
 
         if (m_parentBody == nullptr){
             cerr << "ERROR: ACTUATOR'S "<< m_parentName + remap_idx << " NOT FOUND, IGNORING ACTUATOR\n";
@@ -1337,7 +1641,7 @@ bool afConstraintActuator::createFromAttribs(afConstraintActuatorAttributes *a_a
         }
     }
 
-    m_parentBody->addAFActuator(this);
+    m_parentBody->addActuator(this);
 
     m_parentBody->addChildObject(this);
 
@@ -1346,25 +1650,63 @@ bool afConstraintActuator::createFromAttribs(afConstraintActuatorAttributes *a_a
 
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFActuatorMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getActuatorMap());
 
-        afCreateCommInstance(afObjectType::ACTUATOR,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
                              getMaxPublishFrequency());
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
         m_afActuatorCommPtr->set_type("CONSTRAINT");
 #endif
     }
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
 
     return result;
 }
 
 
+///
+/// \brief afActuator::enableVisualization
+///
+void afConstraintActuator::enableVisualization()
+{
+    if (m_visualizationEnabled == false){
+        cMesh* mesh = new cMesh();
+        cCreateSphere(mesh, m_visibleSize);
+        mesh->m_material->setYellowGold();
+        mesh->setShowEnabled(false);
+        mesh->setUseDisplayList(true);
+        mesh->markForUpdate(false);
+        m_actuatorVisual = mesh;
+        addChildSceneObject(m_actuatorVisual, cTransform());
+        m_afWorld->addSceneObjectToWorld(mesh);
+    }
+    m_visualizationEnabled = true;
+}
+
+void afConstraintActuator::visualize(bool show)
+{
+    if (m_visualizationEnabled == false){
+        enableVisualization();
+    }
+    m_actuatorVisual->setShowEnabled(show);
+
+    if (m_active){
+        m_actuatorVisual->m_material->setGreenLime();
+    }
+    else{
+        m_actuatorVisual->m_material->setYellowGold();
+    }
+}
+
+
 void afConstraintActuator::actuate(string a_rigid_body_name){
 
-    afRigidBodyPtr body = m_afWorld->getAFRigidBody(a_rigid_body_name);
+    afRigidBodyPtr body = m_afWorld->getRigidBody(a_rigid_body_name);
     actuate(body);
 
 }
@@ -1389,7 +1731,7 @@ void afConstraintActuator::actuate(afRigidBodyPtr a_rigidBody){
 }
 
 void afConstraintActuator::actuate(string a_rigid_body_name, btTransform a_bodyOffset){
-    afRigidBodyPtr body = m_afWorld->getAFRigidBody(a_rigid_body_name);
+    afRigidBodyPtr body = m_afWorld->getRigidBody(a_rigid_body_name);
     actuate(body, a_bodyOffset);
 }
 
@@ -1493,7 +1835,7 @@ void afConstraintActuator::actuate(afSensorPtr sensorPtr)
         for (int i = 0 ; i < proximitySensorPtr->getCount() ; i++){
             if (proximitySensorPtr->isTriggered(i)){
                 if (proximitySensorPtr->getSensedBodyType(i) == afBodyType::RIGID_BODY){
-                    afRigidBodyPtr afBody = proximitySensorPtr->getSensedAFRigidBody(i);
+                    afRigidBodyPtr afBody = proximitySensorPtr->getSensedRigidBody(i);
                     actuate(afBody);
                 }
 
@@ -1504,14 +1846,14 @@ void afConstraintActuator::actuate(afSensorPtr sensorPtr)
                     // If we get a sensedSoftBody, we should check if it has a detected face. If a face
                     // is found, we can anchor all the connecting nodes.
                     if (proximitySensorPtr->getSensedSoftBodyFace(i)){
-                        afSoftBodyPtr afSoftBody = proximitySensorPtr->getSensedAFSoftBody(i);
+                        afSoftBodyPtr afSoftBody = proximitySensorPtr->getSensedSoftBody(i);
                         btSoftBody::Face* sensedFace = proximitySensorPtr->getSensedSoftBodyFace(i);
                         actuate(afSoftBody, sensedFace);
                     }
                     // Otherwise we shall directly anchor to nodes. This case
                     // arises for ropes, suturing thread etc
                     else{
-                        afSoftBodyPtr afSoftBody = proximitySensorPtr->getSensedAFSoftBody(i);
+                        afSoftBodyPtr afSoftBody = proximitySensorPtr->getSensedSoftBody(i);
                         vector<btSoftBody::Node*> nodes;
                         nodes.push_back(proximitySensorPtr->getSensedSoftBodyNode(i));
                         actuate(afSoftBody, nodes);
@@ -1559,7 +1901,7 @@ void afConstraintActuator::deactuate(){
 /// \param dt
 ///
 void afConstraintActuator::fetchCommands(double dt){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afActuatorCommPtr.get() != nullptr){
         ambf_msgs::ActuatorCmd cmd = m_afActuatorCommPtr->get_command();
 
@@ -1568,23 +1910,23 @@ void afConstraintActuator::fetchCommands(double dt){
                 // Constraint is active. Ignore request
                 return;
             }
-             string body_name = cmd.body_name.data;
-             if (cmd.use_offset){
-                 // Offset of constraint (joint) in sensed body (child)
-                 btTransform T_jINc;
-                 T_jINc.setOrigin(btVector3(cmd.body_offset.position.x,
-                                                cmd.body_offset.position.y,
-                                                cmd.body_offset.position.z));
+            string body_name = cmd.body_name.data;
+            if (cmd.use_offset){
+                // Offset of constraint (joint) in sensed body (child)
+                btTransform T_jINc;
+                T_jINc.setOrigin(btVector3(cmd.body_offset.position.x,
+                                           cmd.body_offset.position.y,
+                                           cmd.body_offset.position.z));
 
-                 T_jINc.setRotation(btQuaternion(cmd.body_offset.orientation.x,
-                                                      cmd.body_offset.orientation.y,
-                                                      cmd.body_offset.orientation.z,
-                                                      cmd.body_offset.orientation.w));
-                 actuate(body_name, T_jINc);
-             }
-             else{
-                 actuate(body_name);
-             }
+                T_jINc.setRotation(btQuaternion(cmd.body_offset.orientation.x,
+                                                cmd.body_offset.orientation.y,
+                                                cmd.body_offset.orientation.z,
+                                                cmd.body_offset.orientation.w));
+                actuate(body_name, T_jINc);
+            }
+            else{
+                actuate(body_name);
+            }
         }
         else{
             deactuate();
@@ -1597,25 +1939,15 @@ void afConstraintActuator::fetchCommands(double dt){
 ///
 /// \brief afConstraintActuator::updatePositionFromDynamics
 ///
-void afConstraintActuator::update(){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+void afConstraintActuator::update(double dt){
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afActuatorCommPtr.get() != nullptr){
         m_afActuatorCommPtr->set_name(m_name);
         m_afActuatorCommPtr->set_parent_name(m_parentName);
     }
 #endif
 
-    // If visual is enabled, change the color
-    if (m_showActuator){
-        if (m_actuatorVisual){
-            if (m_active){
-                m_actuatorVisual->m_material->setGreenLime();
-            }
-            else{
-                m_actuatorVisual->m_material->setYellowGold();
-            }
-        }
-    }
+    visualize(m_show);
 }
 
 
@@ -1623,7 +1955,7 @@ void afConstraintActuator::update(){
 /// \brief afInertialObject::afInertialObject
 /// \param a_afWorld
 ///
-afInertialObject::afInertialObject(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(a_afWorld, a_modelPtr)
+afInertialObject::afInertialObject(afType a_type, afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(a_type, a_afWorld, a_modelPtr), afMeshObject(a_afWorld, a_modelPtr)
 {
     m_T_iINb.setIdentity();
     m_T_bINi.setIdentity();
@@ -1860,7 +2192,7 @@ void afInertialObject::applyTorque(const cVector3d &a_torque)
 /// \brief afBody::afBody
 /// \param a_world
 ///
-afRigidBody::afRigidBody(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(a_afWorld, a_modelPtr){
+afRigidBody::afRigidBody(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(afType::RIGID_BODY, a_afWorld, a_modelPtr){
     m_mesh_name.clear();
     m_scale = 1.0;
 
@@ -1955,10 +2287,10 @@ void afRigidBody::remove(){
     if (m_bulletRigidBody){
         m_bulletRigidBody->clearForces();
     }
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afRigidBodyCommPtr){
-//        m_afRigidBodyPtr->cleanUp();
-//        m_afRigidBodyPtr.reset();
+        //        m_afRigidBodyPtr->cleanUp();
+        //        m_afRigidBodyPtr.reset();
     }
 #endif
 
@@ -2162,11 +2494,6 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
     m_shaderAttribs = attribs.m_shaderAttribs;
     loadShaderProgram();
 
-    btTransform iOff;
-    if (attribs.m_inertialAttribs.m_estimateInertialOffset){
-        iOff.setOrigin(computeInertialOffset(m_collisionMesh));
-    }
-
     // Set this now, but if we require the inertial offset to be estimated AND a collision
     // shape is a MESH, then estimate it to override this.
     btTransform inertialOffset = to_btTransform(attribs.m_inertialAttribs.m_inertialOffset);
@@ -2178,6 +2505,7 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
             // Override the inertial offset if it is required by attribs
             if (attribs.m_inertialAttribs.m_estimateInertialOffset){
                 btTransform inertialOffset;
+                inertialOffset.setIdentity();
                 inertialOffset.setOrigin(computeInertialOffset(m_collisionMesh));
                 setInertialOffsetTransform(inertialOffset);
             }
@@ -2189,8 +2517,8 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
         }
         else{
             cerr << "WARNING: Body "
-                      << m_name
-                      << "'s mesh \"" << m_collisionMeshFilePath.c_str() << "\" not found\n";
+                 << m_name
+                 << "'s mesh \"" << m_collisionMeshFilePath.c_str() << "\" not found\n";
             return false;
         }
     }
@@ -2225,6 +2553,8 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
     }
     else{
         // No valid collision. Must be an empty object
+        m_bulletCollisionShape = new btEmptyShape();
+        cerr << "ERROR!" << m_name << " COLLISION TYPE NOT UNDERSTOOD" << endl;
     }
 
     // The collision groups are sorted by integer indices. A group is an array of
@@ -2241,8 +2571,8 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
         }
         else{
             cerr << "WARNING: Body "
-                      << m_name
-                      << "'s group number is \"" << group << "\" which should be between [0 - 999], ignoring\n";
+                 << m_name
+                 << "'s group number is \"" << group << "\" which should be between [0 - 999], ignoring\n";
         }
     }
 
@@ -2256,11 +2586,11 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
         setInertia(attribs.m_inertialAttribs.m_inertia);
     }
 
+    createInertialObject();
+
     // inertial origin in world
     cTransform T_iINw = to_cTransform(attribs.m_kinematicAttribs.m_location);
     cTransform T_mINw = T_iINw * to_cTransform(getInertialOffsetTransform());
-
-    createInertialObject();
 
     setInitialTransform(T_mINw);
     setLocalTransform(T_mINw);
@@ -2276,20 +2606,22 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
     setPassive(attribs.m_communicationAttribs.m_passive);
 
     addChildSceneObject(m_visualMesh, cTransform());
-    m_afWorld->m_chaiWorld->addChild(m_visualMesh);
-    m_afWorld->m_chaiWorld->addChild(m_collisionMesh);
+    addChildSceneObject(m_collisionMesh, cTransform());
     m_afWorld->m_bulletWorld->addRigidBody(m_bulletRigidBody);
 
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFRigidBodyMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getRigidBodyMap());
 
-        afCreateCommInstance(afObjectType::RIGID_BODY,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
                              getMaxPublishFrequency());
     }
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
 
     // Where to add the visual, collision and this object?
     return true;
@@ -2300,6 +2632,7 @@ void afRigidBody::createInertialObject()
     // create rigid body
     btRigidBody::btRigidBodyConstructionInfo rigidBodyCI(m_mass, m_bulletMotionState, m_bulletCollisionShape, m_inertia);
     m_bulletRigidBody = new btRigidBody(rigidBodyCI);
+    m_bulletRigidBody->setUserPointer(this);
 
     // by default deactivate sleeping mode
     m_bulletRigidBody->setActivationState(DISABLE_DEACTIVATION);
@@ -2349,14 +2682,14 @@ void afRigidBody::estimateCartesianControllerGains(afCartesianController &contro
 ///
 /// \brief afRigidBody::updatePositionFromDynamics
 ///
-void afRigidBody::update()
+void afRigidBody::update(double dt)
 {
     if (m_bulletRigidBody)
     {
         m_localTransform << getCOMTransform();
     }
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if(m_afRigidBodyCommPtr.get() != nullptr){
         afUpdateTimes(m_afWorld->getWallTime(), m_afWorld->getSimulationTime());
         cQuaternion q;
@@ -2445,7 +2778,7 @@ bool afRigidBody::updateBodySensors(uint threadIdx){
         if (m_threadUpdateFlags[threadIdx] == true){
 
             for (uint idx = startIdx ; idx < endIdx ; idx++){
-                m_afSensors[idx]->update();
+                m_afSensors[idx]->update(0.001);
             }
 
             m_threadUpdateFlags[threadIdx] = false;
@@ -2461,10 +2794,9 @@ bool afRigidBody::updateBodySensors(uint threadIdx){
 /// \param dt
 ///
 void afRigidBody::fetchCommands(double dt){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afRigidBodyCommPtr.get() != nullptr){
         btVector3 force, torque;
-        btVector3 lin_vel, ang_vel;
         ambf_msgs::RigidBodyCmd afCommand = m_afRigidBodyCommPtr->get_command();
 
         // IF THE COMMAND IS OF TYPE FORCE
@@ -2490,20 +2822,20 @@ void afRigidBody::fetchCommands(double dt){
             if (m_bulletRigidBody->isStaticOrKinematicObject()){
                 btTransform Tcommand;
                 Tcommand.setOrigin(btVector3(afCommand.pose.position.x,
-                                        afCommand.pose.position.y,
-                                        afCommand.pose.position.z));
+                                             afCommand.pose.position.y,
+                                             afCommand.pose.position.z));
 
                 Tcommand.setRotation(btQuaternion(afCommand.pose.orientation.x,
-                                             afCommand.pose.orientation.y,
-                                             afCommand.pose.orientation.z,
-                                             afCommand.pose.orientation.w));
+                                                  afCommand.pose.orientation.y,
+                                                  afCommand.pose.orientation.z,
+                                                  afCommand.pose.orientation.w));
 
-//                If the current pose is the same as before, ignore. Otherwise, update pose and collision AABB.
+                //                If the current pose is the same as before, ignore. Otherwise, update pose and collision AABB.
                 if ((m_bulletRigidBody->getWorldTransform().getOrigin() - Tcommand.getOrigin()).norm() > 0.00001 ||
                         m_bulletRigidBody->getWorldTransform().getRotation().angleShortestPath(Tcommand.getRotation()) > 0.0001){
                     // Compensate for the inertial offset
                     Tcommand = Tcommand * getInertialOffsetTransform();
-//                    cerr << "Updating Static Object Pose \n";
+                    //                    cerr << "Updating Static Object Pose \n";
                     m_bulletRigidBody->getMotionState()->setWorldTransform(Tcommand);
                     m_bulletRigidBody->setWorldTransform(Tcommand);
                 }
@@ -2527,7 +2859,7 @@ void afRigidBody::fetchCommands(double dt){
                                  afCommand.pose.position.z);
                 if( cmd_rot_quat.length() < 0.9 || cmd_rot_quat.length() > 1.1 ){
                     cerr << "WARNING: BODY \"" << m_name << "'s\" rotation quaternion command"
-                                                                 " not normalized" << endl;
+                                                            " not normalized" << endl;
                     if (cmd_rot_quat.length() < 0.1){
                         cmd_rot_quat.setW(1.0); // Invalid Quaternion
                     }
@@ -2550,7 +2882,6 @@ void afRigidBody::fetchCommands(double dt){
                     // ELSE USE THE VELOCITY INTERFACE
                     m_bulletRigidBody->setLinearVelocity(pCommand);
                     m_bulletRigidBody->setAngularVelocity(rCommand);
-
                 }
 
 
@@ -2558,6 +2889,7 @@ void afRigidBody::fetchCommands(double dt){
         }
         // IF THE COMMAND IS OF TYPE VELOCITY
         else if (afCommand.cartesian_cmd_type == ambf_msgs::RigidBodyCmd::TYPE_VELOCITY){
+            btVector3 lin_vel, ang_vel;
             m_activeControllerType = afControlType::VELOCITY;
             if (m_bulletRigidBody){
                 lin_vel.setValue(afCommand.twist.linear.x,
@@ -2568,8 +2900,28 @@ void afRigidBody::fetchCommands(double dt){
                                  afCommand.twist.angular.y,
                                  afCommand.twist.angular.z);
 
-                m_bulletRigidBody->setLinearVelocity(lin_vel);
-                m_bulletRigidBody->setAngularVelocity(ang_vel);
+                // If the body is kinematic, we just want to control the position
+                if (m_bulletRigidBody->isStaticOrKinematicObject()){
+                    btTransform Tcommand, Tcurrent;
+                    Tcurrent = getCOMTransform();
+                    btVector3 posCmd = Tcurrent.getOrigin() + lin_vel * dt;
+                    btVector3 rotCmd = ang_vel * dt;
+                    btQuaternion rotQ;
+                    rotQ.setEulerZYX(rotCmd.z(), rotCmd.y(), rotCmd.x());
+                    Tcommand.setOrigin(posCmd);
+
+                    Tcommand.setRotation(rotQ * Tcurrent.getRotation());
+
+                    // Compensate for the inertial offset
+                    Tcommand = Tcommand * getInertialOffsetTransform();
+                    m_bulletRigidBody->getMotionState()->setWorldTransform(Tcommand);
+                    m_bulletRigidBody->setWorldTransform(Tcommand);
+
+                }
+                else{
+                    m_bulletRigidBody->setLinearVelocity(lin_vel);
+                    m_bulletRigidBody->setAngularVelocity(ang_vel);
+                }
             }
         }
 
@@ -2591,9 +2943,9 @@ void afRigidBody::fetchCommands(double dt){
                 }
                 else{
                     cerr << "WARNING! FOR JOINT \"" <<
-                                 m_CJ_PairsActive[jntIdx].m_childJoint->getName() <<
-                                 " \" COMMAND TYPE NOT UNDERSTOOD, SUPPORTED TYPES ARE 0 -> FORCE, 1 -> POSITION, 2 -> VELOCITY " <<
-                                 endl;
+                            m_CJ_PairsActive[jntIdx].m_childJoint->getName() <<
+                            " \" COMMAND TYPE NOT UNDERSTOOD, SUPPORTED TYPES ARE 0 -> FORCE, 1 -> POSITION, 2 -> VELOCITY " <<
+                            endl;
                 }
 
             }
@@ -2607,7 +2959,7 @@ void afRigidBody::fetchCommands(double dt){
 /// \brief afRigidBody::afObjectSetChildrenNames
 ///
 void afRigidBody::afObjectStateSetChildrenNames(){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     int num_children = m_CJ_PairsActive.size();
     if (num_children > 0 && m_afRigidBodyCommPtr != NULL){
         vector<string> children_names;
@@ -2626,7 +2978,7 @@ void afRigidBody::afObjectStateSetChildrenNames(){
 /// \brief afRigidBody::afObjectStateSetJointNames
 ///
 void afRigidBody::afObjectStateSetJointNames(){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     int num_joints = m_CJ_PairsActive.size();
     if (num_joints > 0 && m_afRigidBodyCommPtr != NULL){
         vector<string> joint_names;
@@ -2644,7 +2996,7 @@ void afRigidBody::afObjectStateSetJointNames(){
 /// \brief afRigidBody::afObjectSetJointPositions
 ///
 void afRigidBody::afObjectSetJointPositions(){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     int num_jnts = m_CJ_PairsActive.size();
     if (num_jnts > 0 && m_afRigidBodyCommPtr != NULL){
         if(m_joint_positions.size() != num_jnts){
@@ -2663,7 +3015,7 @@ void afRigidBody::afObjectSetJointPositions(){
 /// \brief afRigidBody::afObjectSetJointVelocities
 ///
 void afRigidBody::afObjectSetJointVelocities(){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     int num_jnts = m_CJ_PairsActive.size();
     if (num_jnts > 0 && m_afRigidBodyCommPtr != NULL){
         if(m_joint_velocities.size() != num_jnts){
@@ -2682,7 +3034,7 @@ void afRigidBody::afObjectSetJointVelocities(){
 /// \brief afRigidBody::afObjectSetJointVelocities
 ///
 void afRigidBody::afObjectSetJointEfforts(){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     int num_jnts = m_CJ_PairsActive.size();
     if (num_jnts > 0 && m_afRigidBodyCommPtr != NULL){
         if(m_joint_efforts.size() != num_jnts){
@@ -2780,7 +3132,8 @@ void afRigidBody::setLocalTransform(cTransform &trans)
 {
     m_bulletMotionState->setWorldTransform(to_btTransform(trans));
     m_bulletRigidBody->setCenterOfMassTransform(to_btTransform(trans));
-    afBaseObject::setLocalTransform(trans);
+    cTransform com = trans * to_cTransform(getInverseInertialOffsetTransform());
+    afBaseObject::setLocalTransform(com);
 }
 
 
@@ -2954,7 +3307,7 @@ void afMeshCleanup::computeUniqueVerticesandTriangles(const cMesh *mesh, std::ve
     for (int xblockNum = 0 ; xblockNum < numBlocks ; xblockNum ++){
         xblockLowerBound = xblockNum * vtxBlockSize;
         xblockUpperBound = xblockLowerBound + vtxBlockSize;
-//        first_print = true;
+        //        first_print = true;
         for (int yblockNum = 0 ; yblockNum < numBlocks ; yblockNum ++){
             yblockLowerBound = yblockNum * vtxBlockSize;
             yblockUpperBound = yblockLowerBound + vtxBlockSize;
@@ -3157,7 +3510,7 @@ void afMeshCleanup::computeUniqueVerticesandTrianglesSequential(const cMesh *mes
 
     int* orderedVtxList = new int[numVertices*3];
 
-    #define ordVtxIdx(a, b) (numVertices * b + a)
+#define ordVtxIdx(a, b) (numVertices * b + a)
 
     orderedVtxList[ordVtxIdx(0,0)] = 0;
     orderedVtxList[ordVtxIdx(0,1)] = 0;
@@ -3295,7 +3648,7 @@ void afMeshCleanup::computeUniqueVerticesandTrianglesSequential(const cMesh *mes
 /// \brief afSoftBody::afSoftBody
 /// \param a_afWorld
 ///
-afSoftBody::afSoftBody(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(a_afWorld, a_modelPtr){
+afSoftBody::afSoftBody(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(afType::SOFT_BODY, a_afWorld, a_modelPtr){
 }
 
 
@@ -3315,7 +3668,7 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
     m_visualMesh = new cMultiMesh();
     m_collisionMesh = new cMultiMesh();
 
-    if (m_visualMesh->loadFromFile(attribs.m_visualAttribs.m_meshFilepath.c_str())){
+    if (afVisualUtils::createFromAttribs(&attribs.m_visualAttribs, m_visualMesh, m_name)){
         m_visualMesh->scale(m_scale);
         m_meshReductionSuccessful = false;
     }
@@ -3350,20 +3703,13 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
     cTransform pose = to_cTransform(attribs.m_kinematicAttribs.m_location);
     setLocalTransform(pose);
 
-    cMaterial mat = afMaterialUtils::createFromAttribs(&attribs.m_visualAttribs.m_colorAttribs);
-    m_visualMesh->setMaterial(mat);
-    // Important to set the transparency after setting the material, otherwise the alpha
-    // channel ruins the Z-buffer depth testing in some way.
-    m_visualMesh->setTransparencyLevel(attribs.m_visualAttribs.m_colorAttribs.m_alpha);
-    m_visualMesh->setShowEnabled(attribs.m_visualAttribs.m_visible);
-
     btSoftBody* softBody = m_bulletSoftBody;
 
     if (attribs.m_useMaterial){
         btSoftBody::Material *pm = softBody->appendMaterial();
-//        pm->m_kLST = attribs.m_kLST;
-//        pm->m_kAST = attribs.m_kAST;
-//        pm->m_kVST = attribs.m_kVST;
+        //        pm->m_kLST = attribs.m_kLST;
+        //        pm->m_kAST = attribs.m_kAST;
+        //        pm->m_kVST = attribs.m_kVST;
 
         softBody->m_materials[0]->m_kLST = attribs.m_kLST;
         softBody->m_materials[0]->m_kAST = attribs.m_kAST;
@@ -3427,7 +3773,6 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
     }
 
     addChildSceneObject(m_visualMesh, cTransform());
-    m_afWorld->m_chaiWorld->addChild(m_visualMesh);
     ((btSoftRigidDynamicsWorld*)m_afWorld->m_bulletWorld)->addSoftBody(m_bulletSoftBody);
     m_afWorld->m_bulletSoftBodyWorldInfo->m_sparsesdf.Reset();
 
@@ -3435,20 +3780,24 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
 
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFSoftBodyMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getSoftBodyMap());
 
-        afCreateCommInstance(afObjectType::SOFT_BODY,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
                              getMaxPublishFrequency());
     }
 
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
+
     return true;
 }
 
 void afSoftBody::createInertialObject()
 {
+    m_bulletSoftBody->setUserPointer(this);
 }
 
 void afSoftBody::setLocalTransform(cTransform &trans)
@@ -3523,7 +3872,7 @@ bool afSoftBody::cleanupMesh(cMultiMesh *multiMesh, std::vector<afVertexTree> &a
         }
 
         reducedMesh->computeAllEdges();
-//        reducedMesh->computeAllNormals();
+        //        reducedMesh->computeAllNormals();
         reducedMesh->setMaterial(multiMesh->m_material);
         reducedMesh->setTexture(multiMesh->getMesh(0)->m_texture);
         reducedMesh->setUseTexture(multiMesh->getMesh(0)->getUseTexture());
@@ -3553,7 +3902,7 @@ bool afSoftBody::generateFromMesh(cMultiMesh *multiMesh, const double a_margin)
         // read number of triangles of the object
         int numTriangles = mesh->m_triangles->getNumElements();
         std::vector<std::vector <int> > polyLines = mesh->m_lines;
-//        computeUniqueVerticesandTriangles(mesh, &m_verticesPtr, &m_trianglesPtr, &m_afVertexTree, &polyLines, false);
+        //        computeUniqueVerticesandTriangles(mesh, &m_verticesPtr, &m_trianglesPtr, &m_afVertexTree, &polyLines, false);
         afMeshCleanup::computeUniqueVerticesandTrianglesSequential(mesh, &m_verticesPtr, &m_trianglesPtr, &m_afVertexTree, &polyLines, false);
         if (m_trianglesPtr.size() > 0){
             m_bulletSoftBody = createFromMesh(*m_afWorld->m_bulletSoftBodyWorldInfo,
@@ -3640,7 +3989,7 @@ bool afSoftBody::createLinksFromLines(btSoftBody *a_softBody, std::vector< std::
 
 
 btSoftBody* afSoftBody::createFromMesh(btSoftBodyWorldInfo& worldInfo, const btScalar* vertices, int nNodes,
-                                                 const unsigned int* triangles, int ntriangles, bool randomizeConstraints)
+                                       const unsigned int* triangles, int ntriangles, bool randomizeConstraints)
 {
     unsigned int maxidx = 0;
     int i, j, ni;
@@ -3755,7 +4104,7 @@ void afJointController::boundImpulse(double &effort_cmd){
 ///
 /// \brief afJoint::afJoint
 ///
-afJoint::afJoint(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(a_afWorld, a_modelPtr){
+afJoint::afJoint(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(afType::JOINT, a_afWorld, a_modelPtr){
     m_posArray.resize(m_jpSize);
     m_dtArray.resize(m_jpSize);
     m_enableLimits = false;
@@ -3788,27 +4137,27 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
     string body1Name = m_namespace + m_parentName;
     string body2Name = m_namespace + m_childName;
 
-    m_afParentBody = m_modelPtr->getAFRigidBodyLocal(body1Name, true);
-    m_afChildBody = m_modelPtr->getAFRigidBodyLocal(body2Name, true);
+    m_afParentBody = m_modelPtr->getRigidBody(body1Name, true);
+    m_afChildBody = m_modelPtr->getRigidBody(body2Name, true);
 
 
     // If either body not found
     if (m_afParentBody == nullptr || m_afChildBody == nullptr){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_modelPtr->getJointMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_modelPtr->getJointMap());
 
         if (m_afParentBody == nullptr){
-            m_afParentBody = m_afWorld->getAFRigidBody(body1Name + remap_idx, true);
+            m_afParentBody = m_afWorld->getRigidBody(body1Name + remap_idx, true);
         }
         if (m_afChildBody == nullptr){
-            m_afChildBody = m_afWorld->getAFRigidBody(body2Name + remap_idx, true);
+            m_afChildBody = m_afWorld->getRigidBody(body2Name + remap_idx, true);
         }
     }
 
     // If we couldn't find the body with name_remapping, it might have been
     // Defined in another ambf file. Search without name_remapping string
     if(m_afParentBody == nullptr){
-        m_afParentBody = m_afWorld->getAFRigidBody(m_parentName, true);
+        m_afParentBody = m_afWorld->getRigidBody(m_parentName, true);
         // If a body is still not found, print error and ignore joint
         if (m_afParentBody == nullptr){
             cerr <<"ERROR: JOINT: \"" << m_name <<
@@ -3820,27 +4169,27 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
         if (!(strcmp(m_afParentBody->m_name.c_str(), "world") == 0)
                 && !(strcmp(m_afParentBody->m_name.c_str(), "World") == 0)
                 && !(strcmp(m_afParentBody->m_name.c_str(), "WORLD") == 0)){
-//            cerr <<"INFO: JOINT: \"" << m_name <<
-//                   "\'s\" PARENT BODY \"" << m_parentName <<
-//                   "\" FOUND IN ANOTHER AMBF CONFIG," << endl;
+            //            cerr <<"INFO: JOINT: \"" << m_name <<
+            //                   "\'s\" PARENT BODY \"" << m_parentName <<
+            //                   "\" FOUND IN ANOTHER AMBF CONFIG," << endl;
         }
     }
     if(m_afChildBody == nullptr){
-        m_afChildBody = m_afWorld->getAFRigidBody(m_childName, true);
+        m_afChildBody = m_afWorld->getRigidBody(m_childName, true);
         // If any body is still not found, print error and ignore joint
         if (m_afChildBody == nullptr){
             cerr <<"ERROR: JOINT: \"" << m_name <<
-                        "\'s\" CHILD BODY \"" << m_childName <<
-                        "\" NOT FOUND" << endl;
+                   "\'s\" CHILD BODY \"" << m_childName <<
+                   "\" NOT FOUND" << endl;
             return 0;
         }
         // If the body is not world, print what we just did
         if ( !(strcmp(m_afChildBody->m_name.c_str(), "world") == 0)
-                && !(strcmp(m_afChildBody->m_name.c_str(), "World") == 0)
-                && !(strcmp(m_afChildBody->m_name.c_str(), "WORLD") == 0)){
+             && !(strcmp(m_afChildBody->m_name.c_str(), "World") == 0)
+             && !(strcmp(m_afChildBody->m_name.c_str(), "WORLD") == 0)){
             cerr <<"INFO: JOINT: \"" << m_name <<
-                        "\'s\" CHILD BODY \"" << m_childName <<
-                        "\" FOUND IN ANOTHER AMBF CONFIG," << endl;
+                   "\'s\" CHILD BODY \"" << m_childName <<
+                   "\" FOUND IN ANOTHER AMBF CONFIG," << endl;
         }
     }
 
@@ -3899,7 +4248,7 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
 
     switch (m_jointType) {
     case afJointType::REVOLUTE:{
-//        m_hinge = new btHingeConstraint(*m_afParentBody->m_bulletRigidBody, *m_afChildBody->m_bulletRigidBody, m_pvtA, m_pvtB, m_axisA, m_axisB, true);
+        //        m_hinge = new btHingeConstraint(*m_afParentBody->m_bulletRigidBody, *m_afChildBody->m_bulletRigidBody, m_pvtA, m_pvtB, m_axisA, m_axisB, true);
         m_hinge = new btHingeConstraint(*m_afParentBody->m_bulletRigidBody, *m_afChildBody->m_bulletRigidBody, frameA, frameB, true);
         m_hinge->setParam(BT_CONSTRAINT_ERP, attribs.m_erp);
         m_hinge->setParam(BT_CONSTRAINT_CFM, attribs.m_cfm);
@@ -4045,14 +4394,19 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
     if (isPassive() == false){
 
         // Joint Comm not implemented yet.
-//        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFJointMap());
+        //        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getAFJointMap());
 
-//        afCreateCommInstance(afObjectType::JOINT,
-//                             getQualifiedName() + remap_idx,
-//                             m_afWorld->getGlobalNamespace(),
-//                             getMinPublishFrequency(),
-//                             getMaxPublishFrequency());
+        //        afCreateCommInstance(afObjectType::JOINT,
+        //                             getQualifiedName() + remap_idx,
+        //                             m_afWorld->getGlobalNamespace(),
+        //                             getMinPublishFrequency(),
+        //                             getMaxPublishFrequency());
     }
+
+
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
 
     return true;
 }
@@ -4061,7 +4415,7 @@ void afJoint::fetchCommands(double dt){
     cacheState(dt);
 }
 
-void afJoint::update(){
+void afJoint::update(double dt){
 }
 
 btVector3 afJoint::getDefaultJointAxisInParent(afJointType a_type)
@@ -4282,7 +4636,7 @@ double afJoint::getEffort(){
 /// \brief afSensor::afSensor
 /// \param a_afWorld
 ///
-afSensor::afSensor(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(a_afWorld, a_modelPtr){
+afSensor::afSensor(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(afType::SENSOR, a_afWorld, a_modelPtr){
 }
 
 
@@ -4298,7 +4652,7 @@ void afSensor::fetchCommands(double dt){
 ///
 /// \brief afSensor::updatePositionFromDynamics
 ///
-void afSensor::update(){
+void afSensor::update(double dt){
 
 }
 
@@ -4328,7 +4682,7 @@ void afRayTracerResult::enableVisualization(afRayTracerSensor* sensorPtr, const 
         cMesh* mesh = new cMesh();
         cCreateSphere(mesh, sphereRadius);
         mesh->m_material->setRed();
-        mesh->setShowEnabled(true);
+        mesh->setShowEnabled(false);
         mesh->setUseDisplayList(true);
         mesh->markForUpdate(false);
         m_fromSphereMesh = mesh;
@@ -4342,7 +4696,7 @@ void afRayTracerResult::enableVisualization(afRayTracerSensor* sensorPtr, const 
         cMesh* mesh = new cMesh();
         cCreateSphere(mesh, sphereRadius);
         mesh->m_material->setGreen();
-        mesh->setShowEnabled(true);
+        mesh->setShowEnabled(false);
         mesh->setUseDisplayList(true);
         mesh->markForUpdate(false);
         m_toSphereMesh = mesh;
@@ -4393,22 +4747,22 @@ bool afRayTracerSensor::createFromAttribs(afRayTracerSensorAttributes *a_attribs
     setMaxPublishFrequency(attribs.m_communicationAttribs.m_maxPublishFreq);
     setPassive(attribs.m_communicationAttribs.m_passive);
 
-    m_showSensor = attribs.m_visible;
+    m_show = attribs.m_visible;
     m_visibilitySphereRadius = attribs.m_visibleSize;
 
     // First search in the local space.
-    m_parentBody = m_modelPtr->getAFRigidBodyLocal(m_parentName, true);
+    m_parentBody = m_modelPtr->getRigidBody(m_parentName, true);
 
     if(m_parentBody == nullptr){
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_modelPtr->getSensorMap());
-        m_parentBody = m_afWorld->getAFRigidBody(m_parentName + remap_idx);
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_modelPtr->getSensorMap());
+        m_parentBody = m_afWorld->getRigidBody(m_parentName + remap_idx);
         if (m_parentBody == nullptr){
             cerr << "ERROR: SENSOR'S "<< m_parentName + remap_idx << " NOT FOUND, IGNORING SENSOR\n";
             return 0;
         }
     }
 
-    m_parentBody->addAFSensor(this);
+    m_parentBody->addSensor(this);
     m_parentBody->addChildObject(this);
 
     switch (attribs.m_specificationType) {
@@ -4437,23 +4791,23 @@ bool afRayTracerSensor::createFromAttribs(afRayTracerSensorAttributes *a_attribs
         break;
     }
 
-    if (m_showSensor){
-        enableVisualization();
-    }
-
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFSensorMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getSensorMap());
 
-        afCreateCommInstance(afObjectType::SENSOR,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
                              getMaxPublishFrequency());
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
         m_afSensorCommPtr->set_type("PROXIMITY");
 #endif
     }
+
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
 
     return result;
 }
@@ -4466,12 +4820,26 @@ void afRayTracerSensor::enableVisualization(){
     for (uint i = 0 ; i < m_count ; i++){
         m_rayTracerResults[i].enableVisualization(this, &m_raysAttribs[i], m_visibilitySphereRadius);
     }
+    m_visualizationEnabled = true;
+}
+
+void afRayTracerSensor::visualize(bool show)
+{
+    if (m_visualizationEnabled == false){
+        enableVisualization();
+    }
+
+    for (uint i = 0 ; i < m_count ; i++){
+        m_rayTracerResults[i].m_fromSphereMesh->setShowEnabled(show);
+        m_rayTracerResults[i].m_hitSphereMesh->setShowEnabled(show && m_rayTracerResults[i].m_triggered);
+        m_rayTracerResults[i].m_toSphereMesh->setShowEnabled(show);
+    }
 }
 
 ///
 /// \brief afRayTracerSensor::updatePositionFromDynamics
 ///
-void afRayTracerSensor::update(){
+void afRayTracerSensor::update(double dt){
 
     if (m_parentBody == nullptr){
         return;
@@ -4486,17 +4854,16 @@ void afRayTracerSensor::update(){
         btCollisionWorld::ClosestRayResultCallback rayCallBack(rayFromWorld, rayToWorld);
         m_afWorld->m_bulletWorld->rayTest(rayFromWorld, rayToWorld, rayCallBack);
         if (rayCallBack.hasHit()){
-            if (m_showSensor){
+            if (m_visualizationEnabled){
                 cVector3d Ph;
                 Ph << rayCallBack.m_hitPointWorld;
                 m_rayTracerResults[i].m_hitSphereMesh->setLocalPos(Ph);
-                m_rayTracerResults[i].m_hitSphereMesh->setShowEnabled(true);
             }
             m_rayTracerResults[i].m_triggered = true;
             if (rayCallBack.m_collisionObject->getInternalType()
                     == btCollisionObject::CollisionObjectTypes::CO_RIGID_BODY){
                 m_rayTracerResults[i].m_sensedBTRigidBody = (btRigidBody*)btRigidBody::upcast(rayCallBack.m_collisionObject);
-                m_rayTracerResults[i].m_sensedAFRigidBody = m_afWorld->getAFRigidBody(m_rayTracerResults[i].m_sensedBTRigidBody);
+                m_rayTracerResults[i].m_sensedRigidBody = m_afWorld->getRigidBody(m_rayTracerResults[i].m_sensedBTRigidBody);
                 m_rayTracerResults[i].m_sensedBodyType = afBodyType::RIGID_BODY;
             }
             else if (rayCallBack.m_collisionObject->getInternalType()
@@ -4528,7 +4895,7 @@ void afRayTracerSensor::update(){
                     m_rayTracerResults[i].m_sensedSoftBodyFaceIdx = sensedSoftBodyFaceIdx;
                     m_rayTracerResults[i].m_sensedSoftBodyFace = &sensedSoftBody->m_faces[sensedSoftBodyFaceIdx];
                     m_rayTracerResults[i].m_sensedBTSoftBody = sensedSoftBody;
-                    m_rayTracerResults[i].m_sensedAFSoftBody = m_afWorld->getAFSoftBody(m_rayTracerResults[i].m_sensedBTSoftBody);
+                    m_rayTracerResults[i].m_sensedSoftBody = m_afWorld->getSoftBody(m_rayTracerResults[i].m_sensedBTSoftBody);
                     m_rayTracerResults[i].m_sensedBodyType = afBodyType::SOFT_BODY;
                 }
                 // Reset the maxDistance for node checking
@@ -4554,15 +4921,14 @@ void afRayTracerSensor::update(){
             m_rayTracerResults[i].m_sensedLocationWorld << rayCallBack.m_hitPointWorld;
         }
         else{
-            if(m_showSensor){
-                m_rayTracerResults[i].m_hitSphereMesh->setShowEnabled(false);
-            }
             m_rayTracerResults[i].m_triggered = false;
             m_rayTracerResults[i].m_depthFraction = 0;
         }
+
+        visualize(m_show);
     }
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     m_afSensorCommPtr->set_count(m_count);
     m_afSensorCommPtr->set_name(m_name);
     m_afSensorCommPtr->set_parent_name(m_parentName);
@@ -4587,11 +4953,11 @@ void afRayTracerSensor::update(){
         triggers[i] = m_rayTracerResults[i].m_triggered;
         measurements[i] = m_rayTracerResults[i].m_depthFraction;
         if (m_rayTracerResults[i].m_triggered){
-            if (m_rayTracerResults[i].m_sensedAFRigidBody){
-                sensed_obj_names[i] = m_rayTracerResults[i].m_sensedAFRigidBody->m_name;
+            if (m_rayTracerResults[i].m_sensedRigidBody){
+                sensed_obj_names[i] = m_rayTracerResults[i].m_sensedRigidBody->getName();
             }
-            if (m_rayTracerResults[i].m_sensedAFSoftBody){
-                sensed_obj_names[i] = m_rayTracerResults[i].m_sensedAFSoftBody->m_name;
+            if (m_rayTracerResults[i].m_sensedSoftBody){
+                sensed_obj_names[i] = m_rayTracerResults[i].m_sensedSoftBody->getName();
             }
         }
         else{
@@ -4705,16 +5071,16 @@ bool afResistanceSensor::createFromAttribs(afResistanceSensorAttributes *a_attri
 
         if (isPassive() == false){
 
-            string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFSensorMap());
+            string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getSensorMap());
 
-            afCreateCommInstance(afObjectType::SENSOR,
+            afCreateCommInstance(m_type,
                                  getQualifiedName() + remap_idx,
                                  m_afWorld->getGlobalNamespace(),
                                  getMinPublishFrequency(),
                                  getMaxPublishFrequency());
-    #ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
             m_afSensorCommPtr->set_type("RESISTANCE");
-    #endif
+#endif
         }
     }
 
@@ -4725,9 +5091,9 @@ bool afResistanceSensor::createFromAttribs(afResistanceSensorAttributes *a_attri
 ///
 /// \brief afResistanceSensor::updatePositionFromDynamics
 ///
-void afResistanceSensor::update(){
+void afResistanceSensor::update(double dt){
     // Let's update the RayTracer Sensor First
-    afRayTracerSensor::update();
+    afRayTracerSensor::update(dt);
 
     if (m_parentBody == nullptr){
         return;
@@ -4736,10 +5102,10 @@ void afResistanceSensor::update(){
     for (uint i = 0 ; i < m_count ; i++){
 
         if (isTriggered(i)){
-            if (m_showSensor){
+            if (m_show){
                 m_rayTracerResults[i].m_hitNormalMesh->setLocalPos(getSensedPoint(i));
                 m_rayTracerResults[i].m_hitNormalMesh->setLocalRot(afUtils::getRotBetweenVectors<cMatrix3d,
-                                                                cVector3d>(cVector3d(0,0,1), m_rayTracerResults[i].m_contactNormal));
+                                                                   cVector3d>(cVector3d(0,0,1), m_rayTracerResults[i].m_contactNormal));
                 m_rayTracerResults[i].m_hitNormalMesh->setShowEnabled(true);
             }
 
@@ -4775,13 +5141,13 @@ void afResistanceSensor::update(){
 
                 if (m_rayTracerResults[i].m_depthFraction < 0 || m_rayTracerResults[i].m_depthFraction > 1){
                     cerr << "LOGIC ERROR! "<< m_name <<" Depth Fraction is " << m_rayTracerResults[i].m_depthFraction <<
-                                 ". It should be between [0-1]" << endl;
+                            ". It should be between [0-1]" << endl;
                     cVector3d rayF, rayT, Pc_a;
                     rayF << m_raysAttribs[i].m_rayFromLocal;
                     rayT << m_raysAttribs[i].m_rayToLocal;
                     Pc_a << P_cINa;
                     cerr << "Ray Start: "<< rayF <<"\nRay End: " << rayT <<
-                                 "\nSensed Point: " << Pc_a << endl;
+                            "\nSensed Point: " << Pc_a << endl;
                     cerr << "----------\n";
                     m_rayTracerResults[i].m_depthFraction = 0;
                 }
@@ -4892,7 +5258,7 @@ void afResistanceSensor::update(){
             m_rayContactResults[i].m_contactPointsValid = false;
             m_rayContactResults[i].m_firstTrigger = true;
 
-            if(m_showSensor){
+            if(m_show){
                 m_rayTracerResults[i].m_hitNormalMesh->setShowEnabled(false);
             }
         }
@@ -4905,7 +5271,7 @@ void afResistanceSensor::update(){
 ///
 afJoint::~afJoint(){
     if (m_btConstraint != nullptr){
-         delete m_btConstraint;
+        delete m_btConstraint;
     }
 
     if (m_feedback != nullptr){
@@ -4915,13 +5281,15 @@ afJoint::~afJoint(){
 
 
 ///
-/// \brief afWorld::afWorld
-/// \param a_global_namespace
+/// \brief afObjectManager::checkIfExists
+/// \param a_obj
+/// \param a_objectsVec
+/// \return
 ///
-bool afWorld::checkIfExists(afBaseObject *a_obj)
+bool afObjectManager::checkIfExists(afBaseObject *a_obj, vector<afBaseObject*> *a_objectsVec)
 {
     vector<afBaseObject*>::iterator it;
-    for (it = m_childrenAFObjects.begin() ; it != m_childrenAFObjects.end() ; ++it){
+    for (it = a_objectsVec->begin() ; it != a_objectsVec->end() ; ++it){
         if ((*it) == a_obj){
             return true;
         }
@@ -4930,7 +5298,761 @@ bool afWorld::checkIfExists(afBaseObject *a_obj)
     return false;
 }
 
-afWorld::afWorld(string a_global_namespace){
+
+///
+/// \brief afObjectManager::addObjectMissingParent
+/// \param a_obj
+///
+void afObjectManager::addObjectMissingParent(afBaseObjectPtr a_obj)
+{
+    if (!checkIfExists(a_obj, &m_afObjectsMissingParents)){
+        m_afObjectsMissingParents.push_back(a_obj);
+    }
+}
+
+
+///
+/// \brief afObjectManager::resolveObjectsMissingParents
+/// \param a_newObject
+///
+void afObjectManager::resolveObjectsMissingParents(afBaseObjectPtr a_newObject)
+{
+    vector<afBaseObject*> stillMissingParents;
+    for (vector<afBaseObject*>::iterator it = m_afObjectsMissingParents.begin() ; it != m_afObjectsMissingParents.end() ; ++it){
+        afBaseObject *needParenting = *it;
+        bool parentFound = false;
+        if ( needParenting == a_newObject ){
+            // If the newly added object is the object in question, then search all previously added objects
+            parentFound = (*it)->resolveParent( (*it)->m_parentName, true);
+        }
+
+        if (parentFound == false){
+            // Else, check if we get an exact name match
+            if ( needParenting->m_parentName.compare( a_newObject->getQualifiedIdentifier() ) == 0 ){
+                a_newObject->addChildObject((*it));
+            }
+            // Else, check if part of the name matches
+            else if( a_newObject->getQualifiedIdentifier().find((*it)->m_parentName) != string::npos){
+                if (needParenting == a_newObject ){
+                    stillMissingParents.push_back((*it));
+                }
+                else{
+                    if (needParenting->m_parentName.compare(a_newObject->getQualifiedIdentifier()) != 0){
+                        cerr << "WARNING! Required parent name of "<< needParenting->getQualifiedName() << " set as " <<
+                                needParenting->m_parentName << ". Parenting to closest match " << a_newObject->getQualifiedIdentifier() << endl;
+                    }
+                    a_newObject->addChildObject((*it));
+                }
+            }
+            // Tried our best, keep this as an object missing parents, so that we can try again on the next object add.
+            else{
+                stillMissingParents.push_back((*it));
+            }
+        }
+    }
+    m_afObjectsMissingParents = stillMissingParents;
+}
+
+
+///
+/// \brief afObjectManager::addBaseObject
+/// \param a_obj
+/// \param a_name
+/// \return
+///
+bool afObjectManager::addBaseObject(afBaseObjectPtr a_obj, string a_name){
+    if (a_obj->getType() == afType::INVALID){
+        cerr << "ERROR! CANNOT ADD OBJECT TO WORLD WITH OBJECT_TYPE AS INVALID " << endl;
+        return false;
+    }
+    (m_childrenObjectsMap[a_obj->getType()])[a_name] = a_obj;
+
+    a_obj->calculateFrameSize();
+    // Whenever a new object is added, try to resolve parenting of objects that require parenting.
+    resolveObjectsMissingParents(a_obj);
+    return true;
+}
+
+
+///
+/// \brief afObjectManager::getBaseObject
+/// \param a_name
+/// \param objMap
+/// \param suppress_warning
+/// \return
+///
+afBaseObjectPtr afObjectManager::getBaseObject(string a_name, afBaseObjectMap* objMap, bool suppress_warning){
+    if (objMap->find(a_name) != objMap->end()){
+        return ((*objMap)[a_name]);
+    }
+    // We didn't find the object using the full name, try checking if the name is a substring of the fully qualified name
+    int matching_obj_count = 0;
+    vector<string> matching_obj_names;
+    afBaseObjectPtr objHandle;
+    afBaseObjectMap::iterator oIt = objMap->begin();
+    for (; oIt != objMap->end() ; ++oIt){
+        if (oIt->first.find(a_name) != string::npos){
+            matching_obj_count++;
+            matching_obj_names.push_back(oIt->first);
+            objHandle = oIt->second;
+        }
+    }
+
+    if (matching_obj_count == 1){
+        // If only one object is found, return that object
+        return objHandle;
+    }
+    else if(matching_obj_count > 1){
+        cerr << "WARNING: MULTIPLE OBJECTS WITH SUB-STRING: \"" << a_name << "\" FOUND. PLEASE SPECIFY FURTHER\n";
+        for (int i = 0 ; i < matching_obj_names.size() ; i++){
+            cerr << "\t" << i << ") " << matching_obj_names[i] << endl;
+        }
+        return nullptr;
+    }
+    else{
+        if (!suppress_warning){
+            cerr << "WARNING: CAN'T FIND ANY OBJECTS NAMED: \"" << a_name << "\" IN GLOBAL MAP \n";
+
+            cerr <<"Existing OBJECTS in Map: " << objMap->size() << endl;
+            afBaseObjectMap::iterator oIt = objMap->begin();
+            for (; oIt != objMap->end() ; ++oIt){
+                cerr << oIt->first << endl;
+            }
+        }
+        return nullptr;
+    }
+}
+
+
+template <class T>
+///
+/// \brief afObjectManager::getBaseObjects
+/// \param objMap
+/// \return
+///
+vector<T*> afObjectManager::getBaseObjects(afBaseObjectMap* objMap){
+    vector<T*> objects;
+    afBaseObjectMap::iterator oIt;
+
+    for (oIt = objMap->begin() ; oIt != objMap->end() ; ++oIt){
+        objects.push_back((T*)oIt->second);
+    }
+
+    return objects;
+}
+
+
+///
+/// \brief afObjectManager::getLight
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afLightPtr afObjectManager::getLight(string a_name, bool suppress_warning){
+    return (afLightPtr)getBaseObject(a_name, getLightMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::getCamera
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afCameraPtr afObjectManager::getCamera(string a_name, bool suppress_warning){
+    return (afCameraPtr)getBaseObject(a_name, getCameraMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::getRigidBody
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afRigidBodyPtr afObjectManager::getRigidBody(string a_name, bool suppress_warning){
+    return (afRigidBodyPtr)getBaseObject(a_name, getRigidBodyMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::getRigidBody
+/// \param a_body
+/// \param suppress_warning
+/// \return
+///
+afRigidBodyPtr afObjectManager::getRigidBody(btRigidBody* a_body, bool suppress_warning){
+    afRigidBodyPtr rBody = nullptr;
+    if (a_body->getUserPointer() == nullptr){
+        if (!suppress_warning){
+            cerr << "WARNING: CAN'T FIND ANY AF RIGID BODY BOUND TO BULLET RIGID BODY: \"" << a_body << "\"\n";
+            cerr <<"Existing Bodies in Map: " << getRigidBodyMap()->size() << endl;
+            afBaseObjectMap::iterator rbIt = getRigidBodyMap()->begin();
+            for (; rbIt != getRigidBodyMap()->end() ; ++rbIt){
+                cerr << rbIt->first << endl;
+            }
+        }
+    }
+    else{
+        rBody = (afRigidBodyPtr) a_body->getUserPointer();
+    }
+    return rBody;
+}
+
+
+///
+/// \brief afObjectManager::getRootRigidBody
+/// \param a_bodyPtr
+/// \return
+///
+afRigidBodyPtr afObjectManager::getRootRigidBody(afRigidBodyPtr a_bodyPtr){
+    /// Find Root Body
+    afRigidBodyPtr rootParentBody = nullptr;
+    vector<int> bodyParentsCount;
+    size_t rootParents = 0;
+    if (a_bodyPtr){
+        if (a_bodyPtr->m_parentBodies.size() == 0){
+            rootParentBody = a_bodyPtr;
+            rootParents++;
+        }
+        else{
+            bodyParentsCount.resize(a_bodyPtr->m_parentBodies.size());
+            vector<afRigidBodyPtr>::const_iterator rIt = a_bodyPtr->m_parentBodies.begin();
+            for (int parentNum=0; rIt != a_bodyPtr->m_parentBodies.end() ; parentNum++, ++rIt){
+                if ((*rIt)->m_parentBodies.size() == 0){
+                    rootParentBody = (*rIt);
+                    rootParents++;
+                }
+                bodyParentsCount[parentNum] = (*rIt)->m_parentBodies.size();
+            }
+        }
+    }
+    else{
+        bodyParentsCount.resize(getRigidBodyMap()->size());
+        afBaseObjectMap::const_iterator mIt = getRigidBodyMap()->begin();
+        for(int bodyNum=0; mIt != getRigidBodyMap()->end() ; bodyNum++, ++mIt){
+            afRigidBodyPtr rb = (afRigidBodyPtr)((*mIt).second);
+            if (rb->m_parentBodies.size() == 0){
+                rootParentBody = rb;
+                ++rootParents;
+            }
+            bodyParentsCount[bodyNum] = rb->m_parentBodies.size();
+        }
+
+    }
+
+    if (rootParents > 1){
+        cerr << "WARNING! " << rootParents << " ROOT PARENTS FOUND, RETURNING THE LAST ONE\n";
+    }
+
+    return rootParentBody;
+}
+
+afJointPtr afObjectManager::getJoint(string a_name, bool suppress_warning){
+    return (afJointPtr)getBaseObject(a_name, getJointMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::getSoftBody
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afSoftBodyPtr afObjectManager::getSoftBody(string a_name, bool suppress_warning){
+    return (afSoftBodyPtr)getBaseObject(a_name, getSoftBodyMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::getSoftBody
+/// \param a_body
+/// \param suppress_warning
+/// \return
+///
+afSoftBodyPtr afObjectManager::getSoftBody(btSoftBody* a_body, bool suppress_warning){
+    afSoftBodyPtr sBody = nullptr;
+    if (a_body->getUserPointer() == nullptr){
+        if (!suppress_warning){
+            cerr << "WARNING: CAN'T FIND ANY AF SOFT BODY BOUND TO BULLET SOFT BODY: \"" << a_body << "\"\n";
+            cerr << "Existing Bodies in Map: " << getSoftBodyMap()->size() << endl;
+            afBaseObjectMap::iterator rbIt = getSoftBodyMap()->begin();
+            for (; rbIt != getSoftBodyMap()->end() ; ++rbIt){
+                cerr << rbIt->first << endl;
+            }
+        }
+    }
+    else{
+        sBody = (afSoftBodyPtr) a_body->getUserPointer();
+    }
+    return sBody;
+}
+
+
+///
+/// \brief afObjectManager::getGhostObject
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afGhostObjectPtr afObjectManager::getGhostObject(string a_name, bool suppress_warning)
+{
+    return (afGhostObjectPtr)getBaseObject(a_name, getGhostObjectMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::getGhostObject
+/// \param a_body
+/// \param suppress_warning
+/// \return
+///
+afGhostObjectPtr afObjectManager::getGhostObject(btGhostObject *a_body, bool suppress_warning){
+    afGhostObjectPtr ghostObj = nullptr;
+    if (a_body->getUserPointer() == nullptr){
+        if (!suppress_warning){
+            cerr << "WARNING: CAN'T FIND ANY AF GHOST OBJECT BOUND TO BULLET GHOST OBJECT: \"" << a_body << "\"\n";
+            cerr << "Existing Bodies in Map: " << getGhostObjectMap()->size() << endl;
+            afBaseObjectMap::iterator rbIt = getGhostObjectMap()->begin();
+            for (; rbIt != getGhostObjectMap()->end() ; ++rbIt){
+                cerr << rbIt->first << endl;
+            }
+        }
+    }
+    else{
+        ghostObj = (afGhostObjectPtr) a_body->getUserPointer();
+    }
+    return ghostObj;
+}
+
+afBaseObjectPtr afObjectManager::getBaseObject(string a_name, bool suppress_warning)
+{
+    vector<afBaseObjectPtr> foundObjs;
+    afChildrenMap::iterator cmIt;
+    for (cmIt = m_childrenObjectsMap.begin() ; cmIt != m_childrenObjectsMap.end() ; ++cmIt){
+        afBaseObjectMap typedObjMap = cmIt->second;
+        afBaseObjectPtr obj = getBaseObject(a_name, &typedObjMap, suppress_warning);
+        if (obj){
+            foundObjs.push_back(obj);
+        }
+    }
+
+    if (foundObjs.size() == 1){
+        return foundObjs[0];
+    }
+
+//    if (!suppress_warning){
+        cerr << "WARNING! MULTIPLE OBJECTS WITH SUB-STRING: \"" << a_name << "\" FOUND. PLEASE SPECIFY FURTHER\n";
+        for (int i = 0 ; i < foundObjs.size() ; i++){
+            cerr << "\t" << i << ") " << foundObjs[i]->getQualifiedIdentifier() << ", Object Type " << foundObjs[i]->getTypeAsStr() << endl;
+        }
+        return nullptr;
+//    }
+}
+
+
+///
+/// \brief afObjectManager::getVolume
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afVolumePtr afObjectManager::getVolume(string a_name, bool suppress_warning)
+{
+    return (afVolumePtr)getBaseObject(a_name, getVolumeMap(), suppress_warning);
+}
+
+///
+/// \brief afObjectManager::getVehicle
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afVehiclePtr afObjectManager::getVehicle(string a_name, bool suppress_warning){
+    return (afVehiclePtr)getBaseObject(a_name, getVehicleMap(), suppress_warning);
+}
+
+
+///
+/// \brief afObjectManager::addLight
+/// \param a_obj
+/// \return
+///
+afObjectManager::afObjectManager(){
+}
+
+string afObjectManager::addLight(afLightPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getLightMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addCamera
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addCamera(afCameraPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getCameraMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addRigidBody
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addRigidBody(afRigidBodyPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getRigidBodyMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addSoftBody
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addSoftBody(afSoftBodyPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getSoftBodyMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+
+///
+/// \brief afObjectManager::addGhostObject
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addGhostObject(afGhostObjectPtr a_obj)
+{
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getGhostObjectMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addJoint
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addJoint(afJointPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getJointMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addActuator
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addActuator(afActuatorPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getActuatorMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addSensor
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addSensor(afSensorPtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getSensorMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+
+///
+/// \brief afObjectManager::addVehicle
+/// \param a_obj
+/// \return
+///
+string afObjectManager::addVehicle(afVehiclePtr a_obj){
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getVehicleMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+///
+/// \brief afObjectManager::addVolume
+/// \param a_volume
+/// \return
+///
+string afObjectManager::addVolume(afVolumePtr a_obj)
+{
+    string qualified_identifier = a_obj->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getVehicleMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    addBaseObject(a_obj, qualified_identifier + remap_str);
+    return remaped_identifier;
+}
+
+string afObjectManager::addBaseObject(afBaseObjectPtr a_obj)
+{
+    string remaped_name = "";
+    switch (a_obj->getType()) {
+    case afType::RIGID_BODY:
+        remaped_name = addRigidBody((afRigidBodyPtr)a_obj);
+        break;
+    case afType::JOINT:
+        remaped_name = addJoint((afJointPtr)a_obj);
+        break;
+    case afType::SOFT_BODY:
+        remaped_name = addSoftBody((afSoftBodyPtr)a_obj);
+        break;
+    case afType::VEHICLE:
+        remaped_name = addVehicle((afVehiclePtr)a_obj);
+        break;
+    case afType::VOLUME:
+        remaped_name = addVolume((afVolumePtr)a_obj);
+        break;
+    case afType::GHOST_OBJECT:
+        remaped_name = addGhostObject((afGhostObjectPtr)a_obj);
+        break;
+    case afType::SENSOR:
+        remaped_name = addSensor((afSensorPtr)a_obj);
+        break;
+    case afType::ACTUATOR:
+        remaped_name = addActuator((afActuatorPtr)a_obj);
+        break;
+    case afType::CAMERA:
+        remaped_name = addCamera((afCameraPtr)a_obj);
+        break;
+    case afType::LIGHT:
+        remaped_name = addLight((afLightPtr)a_obj);
+        break;
+    default:
+        cerr << "ERROR! OBJECT " << a_obj->getQualifiedIdentifier() << "'s TYPE HAS NOT BEEN IMPLEMENTED IN OBJECT MANAGER YET!" << endl;
+        break;
+    }
+
+    return remaped_name;
+}
+
+
+///
+/// \brief afObjectManager::getLights
+/// \return
+///
+afLightVec afObjectManager::getLights(){
+    return getBaseObjects<afLight>(getLightMap());
+}
+
+
+///
+/// \brief afObjectManager::getCameras
+/// \return
+///
+afCameraVec afObjectManager::getCameras(){
+    return getBaseObjects<afCamera>(getCameraMap());
+}
+
+
+///
+/// \brief afObjectManager::getRigidBodies
+/// \return
+///
+afRigidBodyVec afObjectManager::getRigidBodies(){
+    return getBaseObjects<afRigidBody>(getRigidBodyMap());
+}
+
+
+///
+/// \brief afObjectManager::getSoftBodies
+/// \return
+///
+afSoftBodyVec afObjectManager::getSoftBodies(){
+    return getBaseObjects<afSoftBody>(getSoftBodyMap());
+}
+
+
+///
+/// \brief afObjectManager::getGhostObjects
+/// \return
+///
+afGhostObjectVec afObjectManager::getGhostObjects()
+{
+    return getBaseObjects<afGhostObject>(getGhostObjectMap());
+}
+
+
+///
+/// \brief afObjectManager::getJoints
+/// \return
+///
+afJointVec afObjectManager::getJoints(){
+    return getBaseObjects<afJoint>(getJointMap());
+}
+
+
+///
+/// \brief afObjectManager::getSensors
+/// \return
+///
+afSensorVec afObjectManager::getSensors(){
+    return getBaseObjects<afSensor>(getSensorMap());
+}
+
+
+///
+/// \brief afObjectManager::getVehicles
+/// \return
+///
+afVehicleVec afObjectManager::getVehicles(){
+    return getBaseObjects<afVehicle>(getVehicleMap());
+}
+
+
+///
+/// \brief afObjectManager::getVolumes
+/// \return
+///
+afVolumeVec afObjectManager::getVolumes()
+{
+    return getBaseObjects<afVolume>(getVolumeMap());
+}
+
+
+///
+/// \brief afModelManager::getModel
+/// \param a_name
+/// \param suppress_warning
+/// \return
+///
+afModelPtr afModelManager::getModel(string a_name, bool suppress_warning){
+    afModelMap* modelsMap = getModelMap();
+    if (modelsMap->find(a_name) != modelsMap->end()){
+        return ((*modelsMap)[a_name]);
+    }
+    // We didn't find the object using the full name, try checking if the name is a substring of the fully qualified name
+    int matching_obj_count = 0;
+    vector<string> matching_models_names;
+    afModelPtr objHandle;
+    afModelMap::iterator oIt = modelsMap->begin();
+    for (; oIt != modelsMap->end() ; ++oIt){
+        if (oIt->first.find(a_name) != string::npos){
+            matching_obj_count++;
+            matching_models_names.push_back(oIt->first);
+            objHandle = oIt->second;
+        }
+    }
+
+    if (matching_obj_count == 1){
+        // If only one object is found, return that object
+        return objHandle;
+    }
+    else if(matching_obj_count > 1){
+        cerr << "WARNING: MULTIPLE MODELS WITH SUB-STRING: \"" << a_name << "\" FOUND. PLEASE SPECIFY FURTHER\n";
+        for (int i = 0 ; i < matching_models_names.size() ; i++){
+            cerr << "\t" << i << ") " << matching_models_names[i] << endl;
+        }
+        return nullptr;
+    }
+    else{
+        if (!suppress_warning){
+            cerr << "WARNING: CAN'T FIND ANY MODELS NAMED: \"" << a_name << "\" IN GLOBAL MAP \n";
+
+            cerr <<"Existing MODELS in Map: " << modelsMap->size() << endl;
+            afModelMap::iterator oIt = modelsMap->begin();
+            for (; oIt != modelsMap->end() ; ++oIt){
+                cerr << oIt->first << endl;
+            }
+        }
+        return nullptr;
+    }
+}
+
+
+///
+/// \brief afModelManager::addModel
+/// \param a_obj
+/// \return
+///
+afModelManager::afModelManager(afWorldPtr a_afWorld)
+{
+    m_afWorld = a_afWorld;
+}
+
+string afModelManager::addModel(afModelPtr a_model){
+    string qualified_identifier = a_model->getQualifiedIdentifier();
+    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, getModelMap());
+    string remaped_identifier = qualified_identifier + remap_str;
+    m_modelsMap[remaped_identifier] = a_model;
+
+    // Add models objects to world
+    addModelsChildrenToWorld(a_model);
+
+    return remaped_identifier;
+}
+
+
+///
+/// \brief afModelManager::getModels
+/// \return
+///
+afModelVec afModelManager::getModels(){
+    vector<afModelPtr> models;
+    afModelMap::iterator oIt;
+
+    for (oIt = m_modelsMap.begin() ; oIt != m_modelsMap.end() ; ++oIt){
+        models.push_back(oIt->second);
+    }
+
+    return models;
+}
+
+void afModelManager::addModelsChildrenToWorld(afModelPtr a_model)
+{
+    afChildrenMap::iterator cIt;
+    afChildrenMap* childrenMap = a_model->getChildrenMap();
+
+    for(cIt = childrenMap->begin(); cIt != childrenMap->end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            m_afWorld->addBaseObject(childObj);
+            m_afWorld->addChildsSceneObjectsToWorld(childObj);
+        }
+    }
+}
+
+void afModelManager::addChildsSceneObjectsToWorld(afBaseObjectPtr a_object)
+{
+    for(int i = 0 ; i < a_object->m_childrenSceneObjects.size() ; i++){
+        m_afWorld->addSceneObjectToWorld(a_object->m_childrenSceneObjects[i]->getChaiObject());
+    }
+}
+
+
+
+///
+/// \brief afWorld::afWorld
+/// \param a_global_namespace
+///
+afWorld::afWorld(string a_global_namespace): afIdentification(afType::WORLD), afModelManager(this){
     m_maxIterations = 10;
 
     // reset simulation time
@@ -5004,9 +6126,11 @@ afWorld::afWorld(string a_global_namespace){
 
 afWorld::~afWorld()
 {
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
-    Node::destroyNode();
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
+    afROSNode::destroyNode();
 #endif
+
+    m_pluginManager.close();
 
     if(m_bulletWorld){
         delete m_bulletWorld;
@@ -5040,8 +6164,12 @@ afWorld::~afWorld()
         delete m_pickedConstraint;
     }
 
-    for(vector<afBaseObjectPtr>::iterator it = m_childrenAFObjects.begin() ; it != m_childrenAFObjects.end() ; ++it){
-        delete *it;
+    for(afChildrenMap::iterator it = m_childrenObjectsMap.begin() ; it != m_childrenObjectsMap.end() ; ++it){
+        map<string, afBaseObject*> objMap = it->second;
+        for(afBaseObjectMap::iterator oIt = objMap.begin() ; oIt != objMap.end() ; ++oIt){
+            afBaseObject* obj = oIt->second;
+            delete obj;
+        }
     }
 
     for (map<string, afPointCloudPtr>::iterator it = m_pcMap.begin() ; it != m_pcMap.end() ; ++it){
@@ -5122,9 +6250,9 @@ void afWorld::setGlobalNamespace(string a_global_namespace){
 /// \brief afWorld::resetCameras
 ///
 void afWorld::resetCameras(){
-    afCameraMap::iterator camIt;
-    for (camIt = m_afCameraMap.begin() ; camIt != m_afCameraMap.end() ; ++camIt){
-        afCameraPtr afCam = (camIt->second);
+    afBaseObjectMap::iterator camIt;
+    for (camIt = getCameraMap()->begin() ; camIt != getCameraMap()->end() ; ++camIt){
+        afCameraPtr afCam = (afCameraPtr)camIt->second;
         afCam->setLocalTransform(afCam->getInitialTransform());
     }
 
@@ -5137,10 +6265,10 @@ void afWorld::resetCameras(){
 void afWorld::resetDynamicBodies(bool reset_time){
     pausePhysics(true);
 
-    afRigidBodyMap::iterator rbIt;
+    afBaseObjectMap::iterator rbIt;
 
-    for (rbIt = m_afRigidBodyMap.begin() ; rbIt != m_afRigidBodyMap.end() ; ++rbIt){
-        afRigidBodyPtr afRB = (rbIt->second);
+    for (rbIt = getRigidBodyMap()->begin() ; rbIt != getRigidBodyMap()->end() ; ++rbIt){
+        afRigidBodyPtr afRB = (afRigidBodyPtr)rbIt->second;
         btRigidBody* rB = afRB->m_bulletRigidBody;
         btVector3 zero(0, 0, 0);
         rB->clearForces();
@@ -5152,7 +6280,7 @@ void afWorld::resetDynamicBodies(bool reset_time){
     }
 
     if (reset_time){
-//        s_bulletWorld->setSimulationTime(0.0);
+        //        s_bulletWorld->setSimulationTime(0.0);
     }
 
     pausePhysics(false);
@@ -5187,7 +6315,7 @@ double afWorld::getSimulationDeltaTime()
 /// \param dt
 ///
 void afWorld::fetchCommands(double dt){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
 
     // If throttling in enabled, wait here until the step clock is toggled before
     // progressing towards next step
@@ -5267,13 +6395,8 @@ void afWorld::updateDynamics(double a_interval, double a_wallClock, double a_loo
 
     double dt = getSimulationDeltaTime();
 
-    // Read the AF_COMM commands and apply to all different types of objects
-    vector<afBaseObjectPtr>::iterator i;
-
-    for(i = m_childrenAFObjects.begin(); i != m_childrenAFObjects.end(); ++i)
-    {
-        afBaseObject* childObj = *i;
-        childObj->fetchCommands(dt);
+    for (afModelMap::iterator mIt = m_modelsMap.begin() ; mIt != m_modelsMap.end() ; ++mIt){
+        (mIt->second)->fetchCommands(dt);
     }
 
     // integrate simulation during an certain interval
@@ -5283,7 +6406,7 @@ void afWorld::updateDynamics(double a_interval, double a_wallClock, double a_loo
     m_lastSimulationTime = m_simulationTime;
     m_simulationTime = m_simulationTime + a_interval;
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afWorldCommPtr.get() != nullptr){
         m_afWorldCommPtr->set_sim_time(m_simulationTime);
         m_afWorldCommPtr->set_wall_time(m_wallClock);
@@ -5296,12 +6419,16 @@ void afWorld::updateDynamics(double a_interval, double a_wallClock, double a_loo
 
     estimateBodyWrenches();
 
-    for(i = m_childrenAFObjects.begin(); i != m_childrenAFObjects.end(); ++i)
-    {
-        afBaseObject* childObj = *i;
-        childObj->update();
+    for (afModelMap::iterator mIt = m_modelsMap.begin() ; mIt != m_modelsMap.end() ; ++mIt){
+        (mIt->second)->update(dt);
     }
 
+    for (map<string, afPointCloudPtr>::iterator pcIt = m_pcMap.begin() ; pcIt != m_pcMap.end() ; ++pcIt){
+        (pcIt->second)->update(dt);
+    }
+
+    // Update all plugins, world, models and then objects
+    pluginsPhysicsUpdate(dt);
 }
 
 
@@ -5311,18 +6438,19 @@ void afWorld::updateDynamics(double a_interval, double a_wallClock, double a_loo
 void afWorld::estimateBodyWrenches(){
 
     // First clear out the wrench estimation from last iteration
-    afRigidBodyMap::iterator rbIt = m_afRigidBodyMap.begin();
-    for (; rbIt != m_afRigidBodyMap.end() ; ++rbIt){
-        rbIt->second->m_estimatedForce.setZero();
-        rbIt->second->m_estimatedTorque.setZero();
+    afBaseObjectMap::iterator rbIt = getRigidBodyMap()->begin();
+    for (; rbIt != getRigidBodyMap()->end() ; ++rbIt){
+        afRigidBodyPtr rb = (afRigidBodyPtr)rbIt->second;
+        rb->m_estimatedForce.setZero();
+        rb->m_estimatedTorque.setZero();
     }
 
 
     // Now estimate the wrenches based on joints that have feedback enabled
-    afJointMap::iterator jIt = m_afJointMap.begin();
-    for (; jIt != m_afJointMap.end() ; ++ jIt){
-        if (jIt->second->isFeedBackEnabled()){
-            afJointPtr jnt = jIt->second;
+    afBaseObjectMap::iterator jIt = getJointMap()->begin();
+    for (; jIt != getJointMap()->end() ; ++ jIt){
+        afJointPtr jnt = (afJointPtr)jIt->second;
+        if (jnt->isFeedBackEnabled()){
             const btJointFeedback* fb = jnt->m_btConstraint->getJointFeedback();
             btMatrix3x3 R_wINp = jnt->m_afParentBody->m_bulletRigidBody->getWorldTransform().getBasis().transpose();
             btMatrix3x3 R_wINc = jnt->m_afChildBody->m_bulletRigidBody->getWorldTransform().getBasis().transpose();
@@ -5361,7 +6489,7 @@ void afWorld::estimateBodyWrenches(){
 void afWorld::updateSceneObjects()
 {
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_paramsSet == false){
         // Create a default point cloud to listen to
         m_afWorldCommPtr->append_point_cloud_topic(getQualifiedName() + "/" + "point_cloud");
@@ -5370,13 +6498,46 @@ void afWorld::updateSceneObjects()
     }
 #endif
 
-    vector<afBaseObjectPtr>::iterator i;
-
-    for(i = m_childrenAFObjects.begin(); i != m_childrenAFObjects.end(); ++i)
+    // Update all models
+    for(afModelMap::iterator mIt = m_modelsMap.begin(); mIt != m_modelsMap.end(); ++mIt)
     {
-        afBaseObject* childObj = *i;
-        childObj->updateGlobalPose();
-        childObj->updateSceneObjects();
+        (mIt->second)->updateGlobalPose();
+    }
+
+    // Update all models
+    for(afModelMap::iterator mIt = m_modelsMap.begin(); mIt != m_modelsMap.end(); ++mIt)
+    {
+        (mIt->second)->updateSceneObjects();
+    }
+}
+
+
+///
+/// \brief afWorld::pluginsGraphicsUpdate
+///
+void afWorld::pluginsGraphicsUpdate()
+{
+    m_pluginManager.graphicsUpdate();
+    // Update all models
+    for(afModelMap::iterator mIt = m_modelsMap.begin(); mIt != m_modelsMap.end(); ++mIt)
+    {
+        (mIt->second)->pluginsGraphicsUpdate();
+    }
+
+}
+
+
+///
+/// \brief afWorld::pluginsPhysicsUpdate
+/// \param dt
+///
+void afWorld::pluginsPhysicsUpdate(double dt)
+{
+    m_pluginManager.physicsUpdate(dt);
+    // Update all models
+    for(afModelMap::iterator mIt = m_modelsMap.begin(); mIt != m_modelsMap.end(); ++mIt)
+    {
+        (mIt->second)->pluginsPhysicsUpdate(dt);
     }
 }
 
@@ -5464,12 +6625,12 @@ bool afWorld::createDefaultWorld(){
         rbAttribs[i].m_visualAttribs.m_colorAttribs = afColorAttributes();
         rbAttribs[i].m_visualAttribs.m_geometryType = afGeometryType::SINGLE_SHAPE;
         // SET LOCATION
-//        rbAttribs[i].m_kinematicAttribs.m_location = LOCATION;
+        //        rbAttribs[i].m_kinematicAttribs.m_location = LOCATION;
         walls[i].createFromAttribs(&rbAttribs[i]);
     }
 
     // add plane to world as we will want to make it visibe
-//    addChild(walls);
+    //    addChild(walls);
     return true;
 }
 
@@ -5485,22 +6646,22 @@ bool afWorld::createFromAttribs(afWorldAttributes* a_attribs){
     setName(attribs.m_identificationAttribs.m_name);
     setNamespace(attribs.m_identificationAttribs.m_namespace);
 
-    afCreateCommInstance(afObjectType::WORLD,
+    afCreateCommInstance(getType(),
                          getQualifiedName(),
                          getGlobalNamespace(),
-                         50,
-                         2000,
+                         getMinPublishFrequency(),
+                         getMaxPublishFrequency(),
                          10.0);
 
     m_maxIterations = attribs.m_maxIterations;
 
     setGravity(attribs.m_gravity);
 
+    afModelPtr envModel;
+
     if (attribs.m_environmentModel.m_use){
-        afModelPtr envModel = new afModel(this);
-        if (envModel->createFromAttribs(&attribs.m_environmentModel.m_modelAttribs)){
-            addAFModel(envModel);
-        }
+        envModel = new afModel(this);
+        envModel->createFromAttribs(&attribs.m_environmentModel.m_modelAttribs);
 
     }
     else if (attribs.m_enclosure.m_use){
@@ -5518,39 +6679,39 @@ bool afWorld::createFromAttribs(afWorldAttributes* a_attribs){
     m_skyBoxAttribs = attribs.m_skyBoxAttribs;
 
     for (size_t idx = 0 ; idx < attribs.m_lightAttribs.size(); idx++){
-        afLightPtr lightPtr = new afLight(this);
+        afLightPtr lightPtr = new afLight(this, envModel);
         if (lightPtr->createFromAttribs(&attribs.m_lightAttribs[idx])){
-            string remaped_name = addAFLight(lightPtr);
+            envModel->addLight(lightPtr);
         }
     }
 
-    if (m_afLightMap.size() == 0){
+    if (envModel->getLightMap()->size() == 0){
         // ADD A DEFAULT LIGHT???
         afLightAttributes lightAttribs;
         lightAttribs.m_kinematicAttribs.m_location.setPosition(afVector3d(2, 2, 5));
         lightAttribs.m_identificationAttribs.m_name = "default_light";
-        afLightPtr lightPtr = new afLight(this);
+        afLightPtr lightPtr = new afLight(this, envModel);
         lightPtr->createFromAttribs(&lightAttribs);
-        string remaped_name = addAFLight(lightPtr);
+        envModel->addLight(lightPtr);
     }
 
     if (attribs.m_showGUI){
         for (size_t idx = 0 ; idx < attribs.m_cameraAttribs.size(); idx++){
-            afCameraPtr cameraPtr = new afCamera(this);
+            afCameraPtr cameraPtr = new afCamera(this, envModel);
             if (cameraPtr->createFromAttribs(&attribs.m_cameraAttribs[idx])){
-                string remaped_name = addAFCamera(cameraPtr);
+                envModel->addCamera(cameraPtr);
             }
         }
 
-        if (m_afCameraMap.size() == 0){
+        if (envModel->getCameraMap()->size() == 0){
             // No valid cameras defined in the world config file
             // hence create a default camera
-            afCameraPtr cameraPtr = new afCamera(this);
+            afCameraPtr cameraPtr = new afCamera(this, envModel);
             afCameraAttributes camAttribs;
             camAttribs.m_lookAt.set(-1, 0, 0);
             camAttribs.m_identificationAttribs.m_name = "default_camera";
             if (cameraPtr->createFromAttribs(&camAttribs)){
-                string remaped_name = addAFCamera(cameraPtr);
+                envModel->addCamera(cameraPtr);
             }
 
         }
@@ -5559,9 +6720,22 @@ bool afWorld::createFromAttribs(afWorldAttributes* a_attribs){
         loadShaderProgram();
     }
 
+    addModel(envModel);
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
+
     return true;
 }
 
+bool afWorld::loadPlugins(vector<afPluginAttributes> *pluginAttribs)
+{
+    for (int i = 0 ; i < pluginAttribs->size(); i++){
+        m_pluginManager.add((*pluginAttribs)[i].m_filename, (*pluginAttribs)[i].m_name, (*pluginAttribs)[i].m_path.c_str());
+    }
+
+    return true;
+}
 
 ///
 /// \brief afWorld::render
@@ -5569,18 +6743,80 @@ bool afWorld::createFromAttribs(afWorldAttributes* a_attribs){
 ///
 void afWorld::render(afRenderOptions &options)
 {
+    updateSceneObjects();
+
     // Update shadow maps once
     m_chaiWorld->updateShadowMaps(false, options.m_mirroredDisplay);
 
-    updateSceneObjects();
-
-    afCameraMap::iterator camIt;
-    for (camIt = m_afCameraMap.begin(); camIt != m_afCameraMap.end(); ++ camIt){
-        afCameraPtr cameraPtr = (camIt->second);
+    afBaseObjectMap::iterator camIt;
+    for (camIt = getCameraMap()->begin(); camIt != getCameraMap()->end(); ++ camIt){
+        afCameraPtr cameraPtr = (afCameraPtr)camIt->second;
         cameraPtr->render(options);
-
     }
 
+    // Update all plugins, world, then models and then objects
+    pluginsGraphicsUpdate();
+}
+
+cWorld *afWorld::getChaiWorld(){
+    //    cerr << m_chaiWorld << endl;
+    return m_chaiWorld;
+}
+
+afCameraPtr afWorld::getAssociatedCamera(GLFWwindow *a_window)
+{
+    afBaseObjectMap::iterator g_cameraIt;
+    for (g_cameraIt = getCameraMap()->begin() ; g_cameraIt != getCameraMap()->end() ; ++g_cameraIt){
+        afCameraPtr camPtr = (afCameraPtr)g_cameraIt->second;
+        if (a_window == camPtr->m_window){
+            return camPtr;
+        }
+    }
+    return nullptr;
+}
+
+
+///
+/// \brief afWorld::makeCameraWindowsFullScreen
+/// \param a_fullscreen
+///
+void afWorld::makeCameraWindowsFullScreen(bool a_fullscreen)
+{
+    afBaseObjectMap::iterator cIt;
+
+    for (cIt = getCameraMap()->begin() ; cIt != getCameraMap()->end() ; cIt++){
+        afCameraPtr cameraPtr = (afCameraPtr)cIt->second;
+        cameraPtr->makeWindowFullScreen(a_fullscreen);
+    }
+}
+
+
+///
+/// \brief afWorld::makeCameraWindowsMirrorVertical
+/// \param a_mirrorVertical
+///
+void afWorld::makeCameraWindowsMirrorVertical(bool a_mirrorVertical)
+{
+    afBaseObjectMap::iterator cIt;
+
+    for (cIt = getCameraMap()->begin() ; cIt != getCameraMap()->end() ; cIt++){
+        afCameraPtr cameraPtr = (afCameraPtr)cIt->second;
+        cameraPtr->setWindowMirrorVertical(a_mirrorVertical);
+    }
+}
+
+
+///
+/// \brief afWorld::destroyCameraWindows
+///
+void afWorld::destroyCameraWindows()
+{
+    afBaseObjectMap::iterator cIt;
+
+    for (cIt = getCameraMap()->begin() ; cIt != getCameraMap()->end() ; cIt++){
+        afCameraPtr cameraPtr = (afCameraPtr)cIt->second;
+        cameraPtr->destroyWindow();
+    }
 }
 
 
@@ -5640,8 +6876,8 @@ void afWorld::loadSkyBox(){
             int off = vI * 9;
             m_skyBoxMesh->newTriangle(
                         cVector3d(cube[off + 0], cube[off + 1], cube[off + 2]),
-                        cVector3d(cube[off + 3], cube[off + 4], cube[off + 5]),
-                        cVector3d(cube[off + 6], cube[off + 7], cube[off + 8]));
+                    cVector3d(cube[off + 3], cube[off + 4], cube[off + 5]),
+                    cVector3d(cube[off + 6], cube[off + 7], cube[off + 8]));
         }
 
         m_skyBoxMesh->computeAllNormals();
@@ -5695,6 +6931,16 @@ void afWorld::loadSkyBox(){
     }
 }
 
+void afWorld::runHeadless(bool value)
+{
+    m_headless = value;
+}
+
+bool afWorld::isHeadless()
+{
+    return m_headless;
+}
+
 
 ///
 /// \brief afWorld::loadShaderProgram
@@ -5703,98 +6949,6 @@ void afWorld::loadShaderProgram(){
     if (m_shaderAttribs.m_shaderDefined){
         m_shaderProgram = afShaderUtils::createFromAttribs(&m_shaderAttribs, getQualifiedName(), "GLOBAL_SHADERS");
     }
-}
-
-
-
-string afWorld::addAFLight(afLightPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afLightMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afLightPtr, afLightMap>(a_obj, remaped_identifier, &m_afLightMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFCamera(afCameraPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afCameraMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afCameraPtr, afCameraMap>(a_obj, qualified_identifier + remap_str, &m_afCameraMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFRigidBody(afRigidBodyPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afRigidBodyMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afRigidBodyPtr, afRigidBodyMap>(a_obj, qualified_identifier + remap_str, &m_afRigidBodyMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFSoftBody(afSoftBodyPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afSoftBodyMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afSoftBodyPtr, afSoftBodyMap>(a_obj, qualified_identifier + remap_str, &m_afSoftBodyMap);
-    return remaped_identifier;
-}
-
-string afWorld::addAFGhostObject(afGhostObjectPtr a_obj)
-{
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afGhostObjectMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afGhostObjectPtr, afGhostObjectMap>(a_obj, qualified_identifier + remap_str, &m_afGhostObjectMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFJoint(afJointPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afJointMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afJointPtr, afJointMap>(a_obj, qualified_identifier + remap_str, &m_afJointMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFActuator(afActuatorPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afActuatorMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afActuatorPtr, afActuatorMap>(a_obj, qualified_identifier + remap_str, &m_afActuatorMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFSensor(afSensorPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afSensorMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afSensorPtr, afSensorMap>(a_obj, qualified_identifier + remap_str, &m_afSensorMap);
-    return remaped_identifier;
-}
-
-
-string afWorld::addAFModel(afModelPtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afModelMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afModelPtr, afModelMap>(a_obj, qualified_identifier + remap_str, &m_afModelMap);
-    return remaped_identifier;
-}
-
-
-
-string afWorld::addAFVehicle(afVehiclePtr a_obj){
-    string qualified_identifier = a_obj->getQualifiedIdentifier();
-    string remap_str = afUtils::getNonCollidingIdx(qualified_identifier, &m_afVehicleMap);
-    string remaped_identifier = qualified_identifier + remap_str;
-    addAFObject<afVehiclePtr, afVehicleMap>(a_obj, qualified_identifier + remap_str, &m_afVehicleMap);
-    return remaped_identifier;
 }
 
 
@@ -5831,86 +6985,6 @@ void afWorld::buildCollisionGroups(){
 }
 
 
-///
-/// \brief afWorld::getAFLighs
-/// \return
-///
-afLightVec  afWorld::getAFLighs(){
-    return getAFObjects<afLightVec, afLightMap>(&m_afLightMap);
-}
-
-
-///
-/// \brief afWorld::getAFCameras
-/// \return
-///
-afCameraVec afWorld::getAFCameras(){
-    return getAFObjects<afCameraVec, afCameraMap>(&m_afCameraMap);
-}
-
-
-///
-/// \brief afWorld::getAFRigidBodies
-/// \return
-///
-afRigidBodyVec afWorld::getAFRigidBodies(){
-    return getAFObjects<afRigidBodyVec, afRigidBodyMap>(&m_afRigidBodyMap);
-}
-
-
-///
-/// \brief afWorld::getAFSoftBodies
-/// \return
-///
-afSoftBodyVec afWorld::getAFSoftBodies(){
-    return getAFObjects<afSoftBodyVec, afSoftBodyMap>(&m_afSoftBodyMap);
-}
-
-
-///
-/// \brief afWorld::getAFGhostObjects
-/// \return
-///
-afGhostObjectVec afWorld::getAFGhostObjects()
-{
-    return getAFObjects<afGhostObjectVec, afGhostObjectMap>(&m_afGhostObjectMap);
-}
-
-
-///
-/// \brief afWorld::getJoints
-/// \return
-///
-afJointVec afWorld::getAFJoints(){
-    return getAFObjects<afJointVec, afJointMap>(&m_afJointMap);
-}
-
-
-///
-/// \brief afWorld::getSensors
-/// \return
-///
-afSensorVec afWorld::getAFSensors(){
-    return getAFObjects<afSensorVec, afSensorMap>(&m_afSensorMap);
-}
-
-
-///
-/// \brief afWorld::getAFMultiBodies
-/// \return
-///
-afModelVec afWorld::getAFMultiBodies(){
-    return getAFObjects<afModelVec, afModelMap>(&m_afModelMap);
-}
-
-
-///
-/// \brief afWorld::getAFVehicles
-/// \return
-///
-afVehicleVec afWorld::getAFVehicles(){
-    return getAFObjects<afVehicleVec, afVehicleMap>(&m_afVehicleMap);
-}
 
 
 // The following function has been copied from btRidigBodyBase by Erwin Coumans
@@ -5940,12 +7014,12 @@ bool afWorld::pickBody(const cVector3d &rayFromWorld, const cVector3d &rayToWorl
         if (colObject->getInternalType() == btCollisionObject::CollisionObjectTypes::CO_RIGID_BODY){
             btRigidBody* body = (btRigidBody*)btRigidBody::upcast(colObject);
             if (body){
-                m_pickedAFRigidBody = getAFRigidBody(body, true);
-                if (m_pickedAFRigidBody){
-                    cerr << "User picked AF rigid body: " << m_pickedAFRigidBody->m_name << endl;
+                m_pickedRigidBody = getRigidBody(body, true);
+                if (m_pickedRigidBody){
+                    cerr << "User picked AF rigid body: " << m_pickedRigidBody->m_name << endl;
                     m_pickedBulletRigidBody = body;
-                    m_pickedAFRigidBodyColor = m_pickedAFRigidBody->m_visualMesh->m_material->copy();
-                    m_pickedAFRigidBody->m_visualMesh->setMaterial(m_pickColor);
+                    m_pickedRigidBody->m_visualMesh->backupMaterialColors(true);
+                    m_pickedRigidBody->m_visualMesh->setMaterial(m_pickColor);
                     m_savedState = m_pickedBulletRigidBody->getActivationState();
                     m_pickedBulletRigidBody->setActivationState(DISABLE_DEACTIVATION);
                 }
@@ -6087,8 +7161,8 @@ void afWorld::removePickingConstraint(){
         m_pickedBulletRigidBody = nullptr;
     }
 
-    if (m_pickedAFRigidBody){
-        m_pickedAFRigidBody->m_visualMesh->setMaterial(m_pickedAFRigidBodyColor);
+    if (m_pickedRigidBody){
+        m_pickedRigidBody->m_visualMesh->restoreMaterialColors(true);
     }
 
     if (m_pickedSoftBody){
@@ -6103,8 +7177,8 @@ void afWorld::removePickingConstraint(){
 ///
 /// \brief afCamera::afCamera
 ///
-afCamera::afCamera(afWorldPtr a_afWorld): afBaseObject(a_afWorld){
-
+afCamera::afCamera(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(afType::CAMERA, a_afWorld, a_modelPtr){
+    m_camera = nullptr;
     s_monitors = glfwGetMonitors(&s_numMonitors);
     m_targetVisualMarker = new cMesh();
     cCreateSphere(m_targetVisualMarker, 0.03);
@@ -6160,6 +7234,8 @@ bool afCamera::setView(const cVector3d &a_localPosition, const cVector3d &a_loca
     return true;
 }
 
+double afCamera::getFieldViewAngle() const { return m_camera->getFieldViewAngleRad(); }
+
 
 ///
 /// \brief afCamera::setImagePublishInterval
@@ -6178,6 +7254,15 @@ void afCamera::setImagePublishInterval(uint a_interval){
 void afCamera::setDepthPublishInterval(uint a_interval){
     uint minInterval = 1;
     m_depthPublishInterval = cMax(a_interval, minInterval);
+}
+
+
+///
+/// \brief afCamera::setWindowMirrorVertical
+/// \param a_enabled
+///
+void afCamera::setWindowMirrorVertical(bool a_enabled){
+    m_camera->setMirrorVertical(a_enabled);
 }
 
 
@@ -6214,6 +7299,66 @@ void afCamera::showTargetPos(bool a_show){
 
 
 ///
+/// \brief afCamera::createFrameBuffers
+/// \param imageAttribs
+///
+void afCamera::createFrameBuffers(afImageResolutionAttribs* imageAttribs){
+    if (m_frameBuffersCreated){
+        return;
+    }
+
+    m_publishImageResolution = *imageAttribs;
+    m_frameBuffer = new cFrameBuffer();
+    m_bufferColorImage = cImage::create();
+    m_bufferDepthImage = cImage::create();
+    m_frameBuffer->setup(m_camera, imageAttribs->m_width, imageAttribs->m_height, true, true);
+
+    m_frameBuffersCreated = true;
+}
+
+
+///
+/// \brief afCamera::createPreProcessingShaders
+/// \param preprocessingShaderAttribs
+///
+void afCamera::createPreProcessingShaders(afShaderAttributes* preprocessingShaderAttribs){
+    m_preprocessingShaderAttribs = *preprocessingShaderAttribs;
+    m_preprocessingShaderProgram = afShaderUtils::createFromAttribs(&m_preprocessingShaderAttribs, getQualifiedName(), "FRAMEBUFFER_PREPROCESSING");
+}
+
+
+///
+/// \brief afCamera::createImageTransport
+///
+void afCamera::createImageTransport(){
+#ifdef AF_ENABLE_OPEN_CV_SUPPORT
+    m_rosNode = afROSNode::getNode();
+    if (s_imageTransport == nullptr){
+        s_imageTransport = new image_transport::ImageTransport(*m_rosNode);
+    }
+    m_imagePublisher = s_imageTransport->advertise(getQualifiedName() + "/ImageData", 1);
+#endif
+}
+
+
+///
+/// \brief afCamera::createDepthTransport
+/// \param imageAttribs
+///
+void afCamera::createDepthTransport(afImageResolutionAttribs* imageAttribs)
+{
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
+    m_depthPointCloudMsg.reset(new sensor_msgs::PointCloud2());
+    m_depthPointCloudModifier = new sensor_msgs::PointCloud2Modifier(*m_depthPointCloudMsg);
+    m_depthPointCloudModifier->setPointCloud2FieldsByString(2, "xyz", "rgb");
+    m_depthPointCloudModifier->resize(imageAttribs->m_width*imageAttribs->m_height);
+    m_rosNode = afROSNode::getNode();
+    m_depthPointCloudPub = m_rosNode->advertise<sensor_msgs::PointCloud2>(getQualifiedName() + "/DepthData", 1);
+#endif
+}
+
+
+///
 /// \brief afCamera::getTargetPosGlobal
 /// \return
 ///
@@ -6229,104 +7374,22 @@ cVector3d afCamera::getTargetPosGlobal(){
     return m_globalTransform * m_targetPos;
 }
 
-///
-/// \brief afCamera::createDefaultCamera
-/// \return
-///
-bool afCamera::createDefaultCamera(){
-    cerr << "INFO: USING DEFAULT CAMERA" << endl;
-
-    m_camera = new cCamera(m_afWorld->m_chaiWorld);
-
-    m_namespace = m_afWorld->getNamespace();
-
-    // Set a default name
-    m_name = "default_camera";
-
-    // position and orient the camera
-    setView(cVector3d(4.0, 0.0, 2.0),  // camera position (eye)
-            cVector3d(0.0, 0.0,-0.5),       // lookat position (target)
-            cVector3d(0.0, 0.0, 1.0));      // direction of the "up" vector
-
-    m_initialTransform = getLocalTransform();
-
-    // set the near and far clipping planes of the camera
-    m_camera->setClippingPlanes(0.01, 10.0);
-
-    // Set the Field of View
-    m_camera->setFieldViewAngleRad(0.7);
-
-    // set stereo mode
-    m_camera->setStereoMode(cStereoMode::C_STEREO_DISABLED);
-
-    // set stereo eye separation and focal length (applies only if stereo is enabled)
-    m_camera->setStereoEyeSeparation(0.02);
-    m_camera->setStereoFocalLength(2.0);
-
-    // set vertical mirrored display mode
-    setMirrorVertical(false);
-
-    // create display context
-    // compute desired size of window
-    m_monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(m_monitor);
-    int w = 0.5 * mode->width;
-    int h = 0.5 * mode->height;
-    int x = 0.5 * (mode->width - w);
-    int y = 0.5 * (mode->height - h);
-    m_window = glfwCreateWindow(w, h, "AMBF Simulator", nullptr, nullptr);
-    s_mainWindow = m_window;
-
-    m_win_x = x;
-    m_win_y = y;
-    m_width = w;
-    m_height = h;
-
-    // create a font
-    cFontPtr font = NEW_CFONTCALIBRI20();
-
-    m_graphicsDynamicsFreqLabel = new cLabel(font);
-    m_wallSimTimeLabel = new cLabel(font);
-    m_devicesModesLabel = new cLabel(font);
-    m_deviceButtonLabel = new cLabel(font);
-    m_controllingDeviceLabel = new cLabel(font);
-
-    m_graphicsDynamicsFreqLabel->m_fontColor.setBlack();
-    m_wallSimTimeLabel->m_fontColor.setBlack();
-    m_devicesModesLabel->m_fontColor.setBlack();
-    m_deviceButtonLabel->m_fontColor.setBlack();
-    m_controllingDeviceLabel->m_fontColor.setBlack();
-    m_controllingDeviceLabel->setFontScale(0.8);
-
-    m_camera->m_frontLayer->addChild(m_graphicsDynamicsFreqLabel);
-    m_camera->m_frontLayer->addChild(m_wallSimTimeLabel);
-    m_camera->m_frontLayer->addChild(m_devicesModesLabel);
-    m_camera->m_frontLayer->addChild(m_deviceButtonLabel);
-    m_camera->m_frontLayer->addChild(m_controllingDeviceLabel);
-
-    s_windowIdx++;
-    s_cameraIdx++;
-
-    // Assign the Window Camera Handles
-    addChildSceneObject(m_camera, cTransform());
-
-    return true;
-}
-
 bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
 {
+    if (m_afWorld->isHeadless()){
+        // Asked to run headless, don't load cameras
+        return false;
+    }
     afCameraAttributes & attribs = *a_attribs;
 
     int monitorToLoad = attribs.m_monitorNumber;
 
     // Set some default values
-    m_stereMode = C_STEREO_DISABLED;
+    m_stereoMode = C_STEREO_DISABLED;
 
     setIdentifier(attribs.m_identifier);
     setName(attribs.m_identificationAttribs.m_name);
     setNamespace(attribs.m_identificationAttribs.m_namespace);
-
-    m_parentName = attribs.m_hierarchyAttribs.m_parentName;
 
     m_camPos << attribs.m_kinematicAttribs.m_location.getPosition();
     m_camLookAt << attribs.m_lookAt;
@@ -6341,7 +7404,7 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
     }
 
     if (attribs.m_stereo){
-        m_stereMode = cStereoMode::C_STEREO_PASSIVE_LEFT_RIGHT;
+        m_stereoMode = cStereoMode::C_STEREO_PASSIVE_LEFT_RIGHT;
     }
 
     m_controllingDevNames = attribs.m_controllingDeviceNames;
@@ -6355,11 +7418,15 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
     setMaxPublishFrequency(attribs.m_communicationAttribs.m_maxPublishFreq);
     setPassive(attribs.m_communicationAttribs.m_passive);
 
-    m_camera = new cCamera(m_afWorld->m_chaiWorld);
+    m_camera = new cCamera(m_afWorld->getChaiWorld());
 
     addChildSceneObject(m_camera, cTransform());
 
     m_parentName = attribs.m_hierarchyAttribs.m_parentName;
+
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
 
     //////////////////////////////////////////////////////////////////////////////////////
     // position and orient the camera
@@ -6369,7 +7436,7 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
     m_camera->setClippingPlanes(attribs.m_nearPlane, attribs.m_farPlane);
 
     // set stereo mode
-    m_camera->setStereoMode(m_stereMode);
+    m_camera->setStereoMode(m_stereoMode);
 
     // set stereo eye separation and focal length (applies only if stereo is enabled)
     m_camera->setStereoEyeSeparation(attribs.m_stereoEyeSeparation);
@@ -6431,16 +7498,18 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
         return 1;
     }
 
-    // get width and height of window
-    glfwGetWindowSize(m_window, &m_width, &m_height);
-
-    // set position of window
-    glfwSetWindowPos(m_window, m_win_x, m_win_y);
+    assignWindowCallbacks(&m_afWorld->m_cameraWindowCallbacks);
 
     // set the current context
     glfwMakeContextCurrent(m_window);
 
     glfwSwapInterval(0);
+
+    // get width and height of window
+    glfwGetWindowSize(m_window, &m_width, &m_height);
+
+    // set position of window
+    glfwSetWindowPos(m_window, m_win_x, m_win_y);
 
     // initialize GLEW library
 #ifdef GLEW_VERSION
@@ -6479,9 +7548,9 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
 
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFCameraMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getCameraMap());
 
-        afCreateCommInstance(afObjectType::CAMERA,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
@@ -6490,116 +7559,62 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
 
 
     if (m_publishImage || m_publishDepth){
-        m_preprocessingShaderAttribs = attribs.m_preProcessShaderAttribs;
-        if (m_preprocessingShaderAttribs.m_shaderDefined){
-            m_preprocessingShaderProgram = afShaderUtils::createFromAttribs(&m_preprocessingShaderAttribs, getQualifiedName(), "FRAMEBUFFER_PREPROCESSING");
-            // ASSIGN ANY SHADER ATTRIBUTES HERE
-        }
-        m_publishImageResolution = attribs.m_publishImageResolution;
-        m_frameBuffer = new cFrameBuffer();
-        m_bufferColorImage = cImage::create();
-        m_bufferDepthImage = cImage::create();
-        m_frameBuffer->setup(m_camera, m_publishImageResolution.m_width, m_publishImageResolution.m_height, true, true);
 
-#ifdef AF_ENABLE_OPEN_CV_SUPPORT
-        if (s_imageTransportInitialized == false){
-            s_imageTransportInitialized = true;
-            int argc = 0;
-            char **argv = 0;
-            ros::init(argc, argv, "ambf_image_transport_node");
-            s_rosNode = new ros::NodeHandle();
-            s_imageTransport = new image_transport::ImageTransport(*s_rosNode);
-        }
-        m_imagePublisher = s_imageTransport->advertise(getQualifiedName() + "/ImageData", 1);
-#endif
+        createPreProcessingShaders(&attribs.m_preProcessShaderAttribs);
+
+        enableImagePublishing(&attribs.m_publishImageResolution);
 
         if (m_publishDepth){
-            // Copy over the depth noise attribs
-            afNoiseModelAttribs* noiseAtt = &attribs.m_depthNoiseAttribs;
-            m_depthNoise.initialize(noiseAtt->m_mean, noiseAtt->m_std_dev, noiseAtt->m_bias, noiseAtt->m_enable);
-
-            // Set up the world
-            m_dephtWorld = new cWorld();
-
-            // Set up the frame buffer
-            m_depthBuffer = new cFrameBuffer();
-            m_depthBuffer->setup(m_camera, m_publishImageResolution.m_width, m_publishImageResolution.m_height, true, false, GL_RGBA16);
-
-            m_depthPC.setup(m_publishImageResolution.m_width, m_publishImageResolution.m_height, 3);
-
-            // Set up the quad
-            m_depthMesh = new cMesh();
-            float quad[] = {
-                // positions
-                -1.0f,  1.0f, 0.0f,
-                -1.0f, -1.0f, 0.0f,
-                1.0f, -1.0f, 0.0f,
-                -1.0f, 1.0f, 0.0f,
-                1.0f,  -1.0f, 0.0f,
-                1.0f,  1.0f, 0.0f,
-            };
-            for (int vI = 0 ; vI < 2 ; vI++){
-                int off = vI * 9;
-                m_depthMesh->newTriangle(
-                            cVector3d(quad[off + 0], quad[off + 1], quad[off + 2]),
-                        cVector3d(quad[off + 3], quad[off + 4], quad[off + 5]),
-                        cVector3d(quad[off + 6], quad[off + 7], quad[off + 8]));
-            }
-            m_depthMesh->m_vertices->setTexCoord(0, 0.0, 1.0, 1.0);
-            m_depthMesh->m_vertices->setTexCoord(1, 0.0, 0.0, 1.0);
-            m_depthMesh->m_vertices->setTexCoord(2, 1.0, 0.0, 1.0);
-            m_depthMesh->m_vertices->setTexCoord(3, 0.0, 1.0, 1.0);
-            m_depthMesh->m_vertices->setTexCoord(4, 1.0, 0.0, 1.0);
-            m_depthMesh->m_vertices->setTexCoord(5, 1.0, 1.0, 1.0);
-
-            m_depthMesh->computeAllNormals();
-            m_depthMesh->m_texture = cTexture2d::create();
-            m_depthMesh->m_texture->m_image->allocate(m_publishImageResolution.m_width, m_publishImageResolution.m_height, GL_RGBA, GL_UNSIGNED_BYTE);
-            m_depthMesh->setUseTexture(true);
-
-            m_dephtWorld->addChild(m_depthMesh);
-            m_dephtWorld->addChild(m_camera);
-
-            m_depthBufferColorImage = cImage::create();
-            m_depthBufferColorImage->allocate(m_publishImageResolution.m_width, m_publishImageResolution.m_height, GL_RGBA, GL_UNSIGNED_INT);
-
-            cShaderProgramPtr shaderProgram;
-            if (attribs.m_depthComputeShaderAttribs.m_shaderDefined){
-                shaderProgram = afShaderUtils::createFromAttribs(&attribs.m_depthComputeShaderAttribs, getQualifiedName(), "DEPTH_COMPUTE");
-            }
-            else{
-                cerr << "INFO! USING INTERNALLY DEFINED DEPTH_COMPUTE SHADERS" << endl;
-                shaderProgram = cShaderProgram::create(AF_DEPTH_COMPUTE_VTX, AF_DEPTH_COMPUTE_FRAG);
-            }
-
-            if (shaderProgram->linkProgram()){
-                cGenericObject* go;
-                cRenderOptions ro;
-                shaderProgram->use(go, ro);
-                m_depthMesh->setShaderProgram(shaderProgram);
-                shaderProgram->disable();
-            }
-            else{
-                cerr << "ERROR! FOR DEPTH_TO_PC2 FAILED TO COMPILE/LINK SHADER FILES: " << endl;
-                m_publishDepth = false;
-            }
-
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
-            m_depthPointCloudMsg.reset(new sensor_msgs::PointCloud2());
-            m_depthPointCloudModifier = new sensor_msgs::PointCloud2Modifier(*m_depthPointCloudMsg);
-            m_depthPointCloudModifier->setPointCloud2FieldsByString(2, "xyz", "rgb");
-            m_depthPointCloudModifier->resize(m_publishImageResolution.m_width*m_publishImageResolution.m_height);
-            if (s_imageTransportInitialized == false){
-                s_imageTransportInitialized = true;
-                int argc = 0;
-                char **argv = 0;
-                ros::init(argc, argv, "ambf_image_transport_node");
-                s_rosNode = new ros::NodeHandle();
-            }
-            m_depthPointCloudPub = s_rosNode->advertise<sensor_msgs::PointCloud2>(getQualifiedName() + "/DepthData", 1);
-#endif
-
+            enableDepthPublishing(&attribs.m_publishImageResolution, &attribs.m_depthNoiseAttribs, &attribs.m_depthComputeShaderAttribs);
         }
+    }
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
+
+    return true;
+}
+
+bool afCamera::assignWindowCallbacks(afCameraWindowCallBacks *a_callbacks)
+{
+    if (!m_window)
+    {
+        cout << "ERROR! FAILED TO CREATE OPENGL WINDOW" << endl;
+        cSleepMs(1000);
+        glfwTerminate();
+        return 0;
+    }
+
+    if (a_callbacks->keyCallback){
+        glfwSetKeyCallback(m_window, a_callbacks->keyCallback);
+    }
+
+    if (a_callbacks->mouseBtnsCallback){
+        // set mouse buttons callback
+        glfwSetMouseButtonCallback(m_window, a_callbacks->mouseBtnsCallback);
+    }
+
+    if (a_callbacks->mousePosCallback){
+        //set mouse buttons callback
+        glfwSetCursorPosCallback(m_window, a_callbacks->mousePosCallback);
+    }
+
+    if (a_callbacks->mouseScrollCallback){
+        //set mouse scroll callback
+        glfwSetScrollCallback(m_window, a_callbacks->mouseScrollCallback);
+    }
+
+    if (a_callbacks->windowSizeCallback){
+        // set resize callback
+        glfwSetWindowSizeCallback(m_window, a_callbacks->windowSizeCallback);
+
+        // Initialize the window size
+        a_callbacks->windowSizeCallback(m_window, m_width, m_height);
+    }
+
+    if (a_callbacks->dragDropCallback){
+        // set drag and drop callback
+        glfwSetDropCallback(m_window, a_callbacks->dragDropCallback);
     }
 
     return true;
@@ -6619,25 +7634,6 @@ void afCamera::computeDepthOnCPU()
     int bbp = m_bufferDepthImage->getBytesPerPixel();
 
     double varScale = pow(2, sizeof(uint) * 8);
-
-    // Update the dimensions scale information.
-    float n = -m_camera->getNearClippingPlane();
-    float f = -m_camera->getFarClippingPlane();
-    double fva = m_camera->getFieldViewAngleRad();
-//    double ar = m_camera->getAspectRatio();
-    double ar = ((double)m_publishImageResolution.m_width / (double)m_publishImageResolution.m_height);
-
-    double delta_x;
-    if (isOrthographic()){
-        delta_x = m_camera->getOrthographicViewWidth();
-    }
-    else{
-        delta_x = 2.0 * cAbs(f) * cTanRad(fva/2.0);
-    }
-    double delta_y = delta_x / ar;
-    double delta_z = f-n;
-
-    cVector3d maxWorldDimensions(delta_x, delta_y, delta_z);
 
     for (int y_span = 0 ; y_span < height ; y_span++){
         double yImage = double(y_span) / (height - 1);
@@ -6687,18 +7683,20 @@ void afCamera::computeDepthOnGPU()
     float n = -m_camera->getNearClippingPlane();
     float f = -m_camera->getFarClippingPlane();
     double fva = m_camera->getFieldViewAngleRad();
-//    double ar = m_camera->getAspectRatio();
-    double ar = ((double)m_publishImageResolution.m_width / (double)m_publishImageResolution.m_height);
+    double ar = m_camera->getAspectRatio();
 
     double maxX;
+    double maxY;
+    double maxZ;
     if (isOrthographic()){
         maxX = m_camera->getOrthographicViewWidth();
+        maxY = maxX / ar;
     }
     else{
-        maxX = 2.0 * cAbs(f) * cTanRad(fva/2.0);
+        maxY = 2.0 * cAbs(f) * cTanRad(fva/2.0);
+        maxX = maxY * ar;
     }
-    double maxY = maxX / ar;
-    double maxZ = f-n;
+    maxZ = f-n;
 
     cVector3d maxWorldDimensions(maxX, maxY, maxZ);
 
@@ -6714,23 +7712,23 @@ void afCamera::computeDepthOnGPU()
 
     m_depthBuffer->renderView();
 
-    m_camera->setParentWorld(m_afWorld->m_chaiWorld);
+    m_camera->setParentWorld(m_afWorld->getChaiWorld());
 
     m_depthBuffer->copyImageBuffer(m_depthBufferColorImage, GL_UNSIGNED_INT);
 
-//    // bind texture
-//    glBindTexture(GL_TEXTURE_2D, m_depthBuffer->m_imageBuffer->getTextureId());
+    //    // bind texture
+    //    glBindTexture(GL_TEXTURE_2D, m_depthBuffer->m_imageBuffer->getTextureId());
 
-//    // settings
-//    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    //    // settings
+    //    glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-//    // copy pixel data if required
-//    glGetTexImage(GL_TEXTURE_2D,
-//                  0,
-//                  GL_RGBA,
-//                  GL_FLOAT,
-//                  (GLvoid*)(m_depthBufferColorImage2)
-//                  );
+    //    // copy pixel data if required
+    //    glGetTexImage(GL_TEXTURE_2D,
+    //                  0,
+    //                  GL_RGBA,
+    //                  GL_FLOAT,
+    //                  (GLvoid*)(m_depthBufferColorImage2)
+    //                  );
 
     uint width = m_depthBufferColorImage->getWidth();
     uint height = m_depthBufferColorImage->getHeight();
@@ -6800,7 +7798,7 @@ void afCamera::publishImage(){
 ///
 void afCamera::publishDepthPointCloud()
 {
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     sensor_msgs::PointCloud2Iterator<float> pcMsg_x(*m_depthPointCloudMsg, "x");
     sensor_msgs::PointCloud2Iterator<float> pcMsg_y(*m_depthPointCloudMsg, "y");
     sensor_msgs::PointCloud2Iterator<float> pcMsg_z(*m_depthPointCloudMsg, "z");
@@ -6835,11 +7833,28 @@ void afCamera::publishDepthPointCloud()
 }
 
 ///
+/// \brief afCamera::getFrontLayer
+/// \return
+///
+cWorld *afCamera::getFrontLayer(){
+    return m_camera->m_frontLayer;
+}
+
+
+///
+/// \brief afCamera::getBackLayer
+/// \return
+///
+cWorld *afCamera::getBackLayer(){
+    return m_camera->m_backLayer;
+}
+
+///
 /// \brief afCamera::afObjectCommandExecute
 /// \param dt
 ///
 void afCamera::fetchCommands(double dt){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afCameraCommPtr.get() != nullptr){
         ambf_msgs::CameraCmd m_afCommand = m_afCameraCommPtr->get_command();
 
@@ -6877,9 +7892,7 @@ void afCamera::fetchCommands(double dt){
 
                 m_camera->setClippingPlanes(near_plane, far_plane);
 
-                if (m_parentName.compare(parent_name) != 0){
-                    resolveParenting(parent_name);
-                }
+                resolveParent(parent_name);
 
                 switch (m_afCameraCommPtr->get_projection_type()) {
                 case ambf_comm::ProjectionType::PERSPECTIVE:
@@ -6926,11 +7939,11 @@ void afCamera::fetchCommands(double dt){
 ///
 /// \brief afCamera::updatePositionFromDynamics
 ///
-void afCamera::update()
+void afCamera::update(double dt)
 {
 
     // update Transform data for m_ObjectPtr
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if(m_afCameraCommPtr.get() != nullptr){
 
         if (m_paramsSet == false){
@@ -6949,7 +7962,7 @@ void afCamera::update()
                 m_afCameraCommPtr->set_projection_type(ambf_comm::ProjectionType::ORTHOGRAPHIC);
             }
 
-            if (m_stereMode == C_STEREO_DISABLED){
+            if (m_stereoMode == C_STEREO_DISABLED){
                 m_afCameraCommPtr->set_view_mode(ambf_comm::ViewMode::MONO);
             }
             else{
@@ -7021,43 +8034,34 @@ void afCamera::updateLabels(afRenderOptions &options)
 
 }
 
+cCamera *afCamera::getInternalCamera(){
+    return m_camera;
+}
 
-///
-/// \brief afCamera::~afCamera
-///
+
+
 afCamera::~afCamera(){
     if (m_frameBuffer != nullptr){
         delete m_frameBuffer;
     }
 
-    if (m_depthBuffer != nullptr){
-        delete m_depthBuffer;
-    }
-
     if (m_dephtWorld != nullptr){
         delete m_dephtWorld;
     }
-    else{
-        // If cam was added to depth world, it would delete it, if not, delete it explicitly.
-        delete m_camera;
-    }
 
-    if (m_targetVisualMarker !=nullptr){
-        delete m_targetVisualMarker;
-    }
 #ifdef AF_ENABLE_OPEN_CV_SUPPORT
     if (s_imageTransport != nullptr){
         delete s_imageTransport;
+        s_imageTransport = nullptr;
     }
-
-    s_imageTransportInitialized = false;
 #endif
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
-    if (s_rosNode != nullptr){
-        delete s_rosNode;
-        s_rosNode = 0;
-    }
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
+    // DO NOT DELETE AS THE NODE SHOULD BE DESTROYED EXTERNALLY
+    //    if (m_rosNode != nullptr){
+    //        delete m_rosNode;
+    //        m_rosNode = 0;
+    //    }
 
     if (m_depthPointCloudModifier != nullptr){
         delete m_depthPointCloudModifier;
@@ -7081,14 +8085,14 @@ void afCamera::render(afRenderOptions &options)
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
 
     // Update the Labels in a separate sub-routine
-    if (options.m_updateLabels && !m_publishDepth){
+    if (options.m_updateLabels && !m_publishDepth && !m_publishImage){
         updateLabels(options);
     }
 
     renderSkyBox();
 
     // render world
-    m_camera->renderView(m_width,m_height);
+    m_camera->renderView(m_width, m_height);
 
     // swap buffers
     glfwSwapBuffers(m_window);
@@ -7122,16 +8126,19 @@ void afCamera::renderSkyBox(){
 }
 
 
+///
+/// \brief afCamera::renderFrameBuffer
+///
 void afCamera::renderFrameBuffer(){
     if (m_publishImage || m_publishDepth){
 
-        loadPreProcessingShaders();
+        activatePreProcessingShaders();
 
         m_frameBuffer->renderView();
         m_frameBuffer->copyImageBuffer(m_bufferColorImage);
         m_frameBuffer->copyDepthBuffer(m_bufferDepthImage);
 
-        unloadPreProcessingShaders();
+        deactivatePreProcessingShaders();
     }
 
     if (m_publishImage){
@@ -7153,36 +8160,67 @@ void afCamera::renderFrameBuffer(){
     }
 }
 
-void afCamera::loadPreProcessingShaders()
+
+///
+/// \brief afCamera::activatePreProcessingShaders
+///
+void afCamera::activatePreProcessingShaders()
 {
     if (m_preprocessingShaderAttribs.m_shaderDefined){
         if (m_preprocessingShaderProgram.get()){
             preProcessingShadersUpdate();
-            afRigidBodyMap::iterator rbIt;
-            afRigidBodyMap* rbMap = m_afWorld->getAFRigidBodyMap();
+            afBaseObjectMap::iterator rbIt;
+            afBaseObjectMap* rbMap = m_afWorld->getRigidBodyMap();
             for (rbIt = rbMap->begin(); rbIt != rbMap->end() ; rbIt++){
-                afRigidBodyPtr rb = rbIt->second;
-                if (rb->m_visualMesh){
+                afRigidBodyPtr rbPtr = (afRigidBodyPtr)rbIt->second;
+                if (rbPtr->m_visualMesh){
                     // Store the current shader Pgm
-                    m_shaderProgramBackup[rb] = rb->m_visualMesh->getShaderProgram();
-                    rb->m_visualMesh->setShaderProgram(m_preprocessingShaderProgram);
+                    rbPtr->backupShaderProgram();
+                    rbPtr->setShaderProgram(m_preprocessingShaderProgram);
+                }
+            }
+
+            // Temporary. Set the voxel rendering mode that ignores lighting and
+            // just renders the color of each voxel
+            afBaseObjectMap::iterator vIt;
+            afBaseObjectMap* vMap = m_afWorld->getVolumeMap();
+            for (vIt = vMap->begin(); vIt != vMap->end() ; vIt++){
+                afVolumePtr vPtr = (afVolumePtr)vIt->second;
+                if (vPtr->getInternalVolume()){
+                    // Store the current shader Pgm
+                    vPtr->backupShaderProgram();
+                    vPtr->getInternalVolume()->setRenderingModeVoxelColors();
                 }
             }
         }
     }
 }
 
-void afCamera::unloadPreProcessingShaders()
+
+///
+/// \brief afCamera::deactivatePreProcessingShaders
+///
+void afCamera::deactivatePreProcessingShaders()
 {
     if (m_preprocessingShaderAttribs.m_shaderDefined){
         if (m_preprocessingShaderProgram.get()){
-            afRigidBodyMap::iterator rbIt;
-            afRigidBodyMap* rbMap = m_afWorld->getAFRigidBodyMap();
+            afBaseObjectMap::iterator rbIt;
+            afBaseObjectMap* rbMap = m_afWorld->getRigidBodyMap();
             for (rbIt = rbMap->begin(); rbIt != rbMap->end() ; rbIt++){
-                afRigidBodyPtr rb = rbIt->second;
+                afRigidBodyPtr rb = (afRigidBody*)rbIt->second;
                 if (rb->m_visualMesh){
                     // Reassign the backedup shaderpgm for the next rendering pass
-                    rb->m_visualMesh->setShaderProgram(m_shaderProgramBackup[rb]);
+                    rb->restoreShaderProgram();
+                }
+            }
+
+            afBaseObjectMap::iterator vIt;
+            afBaseObjectMap* vMap = m_afWorld->getVolumeMap();
+            for (vIt = vMap->begin(); vIt != vMap->end() ; vIt++){
+                afVolumePtr vPtr = (afVolumePtr)vIt->second;
+                if (vPtr->getInternalVolume()){
+                    // Store the current shader Pgm
+                    vPtr->restoreShaderProgram();
                 }
             }
         }
@@ -7195,20 +8233,150 @@ void afCamera::preProcessingShadersUpdate()
     cRenderOptions po;
     m_preprocessingShaderProgram->use(go, po);
 
-//     Assign any shader attribs here.
-//     Example:
-//    m_preprocessingShaderProgram->setUniform("var_name", var);
+    //     Assign any shader attribs here.
+    //     Example:
+    //    m_preprocessingShaderProgram->setUniform("var_name", var);
 
-//     Also loop through visual objects to assign any specific object IDs etc.
-//     Example:
-//    afRigidBodyMap* rbMap = m_afWorld->getAFRigidBodyMap();
-//    for (rbIt = rbMap->begin(); rbIt != rbMap->end() ; rbIt++){
-//        afRigidBodyPtr rb = rbIt->second;
-//        if (rb->m_visualMesh){
-//            // Reassign the backedup shaderpgm for the next rendering pass
-//            rb->m_visualMesh->setShaderProgram(m_shaderProgramBackup[rb]);
-//        }
-//    }
+    //     Also loop through visual objects to assign any specific object IDs etc.
+    //     Example:
+    //    afRigidBodyMap* rbMap = m_afWorld->getAFRigidBodyMap();
+    //    for (rbIt = rbMap->begin(); rbIt != rbMap->end() ; rbIt++){
+    //        afRigidBodyPtr rb = rbIt->second;
+    //        if (rb->m_visualMesh){
+    //            // Reassign the backedup shaderpgm for the next rendering pass
+    //            rb->m_visualMesh->setShaderProgram(m_shaderProgramBackup[rb]);
+    //        }
+    //    }
+}
+
+
+///
+/// \brief afCamera::enableImagePublishing
+/// \param imageAttribs
+///
+void afCamera::enableImagePublishing(afImageResolutionAttribs* imageAttribs)
+{
+    createFrameBuffers(imageAttribs);
+    createImageTransport();
+    m_publishImage = true;
+}
+
+
+///
+/// \brief afCamera::enableDepthPublishing
+/// \param imageAttribs
+/// \param depthComputeShaderAttribs
+/// \param noiseAtt
+///
+void afCamera::enableDepthPublishing(afImageResolutionAttribs* imageAttribs, afNoiseModelAttribs* noiseAtt, afShaderAttributes* depthComputeShaderAttribs)
+{
+    createFrameBuffers(imageAttribs);
+    m_depthNoise.createFromAttribs(noiseAtt);
+
+    // Set up the world
+    m_dephtWorld = new cWorld();
+
+    // Set up the frame buffer
+    m_depthBuffer = new cFrameBuffer();
+
+    m_depthBuffer->setup(m_camera, imageAttribs->m_width, imageAttribs->m_height, true, false, GL_RGBA16);
+
+    m_depthPC.setup(imageAttribs->m_width, imageAttribs->m_height, 3);
+
+    // Set up the quad
+    m_depthMesh = new cMesh();
+    float quad[] = {
+        // positions
+        -1.0f,  1.0f, 0.0f,
+        -1.0f, -1.0f, 0.0f,
+        1.0f, -1.0f, 0.0f,
+        -1.0f, 1.0f, 0.0f,
+        1.0f,  -1.0f, 0.0f,
+        1.0f,  1.0f, 0.0f,
+    };
+    for (int vI = 0 ; vI < 2 ; vI++){
+        int off = vI * 9;
+        m_depthMesh->newTriangle(cVector3d(quad[off + 0], quad[off + 1], quad[off + 2]),
+                cVector3d(quad[off + 3], quad[off + 4], quad[off + 5]),
+                cVector3d(quad[off + 6], quad[off + 7], quad[off + 8]));
+    }
+    m_depthMesh->m_vertices->setTexCoord(0, 0.0, 1.0, 1.0);
+    m_depthMesh->m_vertices->setTexCoord(1, 0.0, 0.0, 1.0);
+    m_depthMesh->m_vertices->setTexCoord(2, 1.0, 0.0, 1.0);
+    m_depthMesh->m_vertices->setTexCoord(3, 0.0, 1.0, 1.0);
+    m_depthMesh->m_vertices->setTexCoord(4, 1.0, 0.0, 1.0);
+    m_depthMesh->m_vertices->setTexCoord(5, 1.0, 1.0, 1.0);
+
+    m_depthMesh->computeAllNormals();
+    m_depthMesh->m_texture = cTexture2d::create();
+    m_depthMesh->m_texture->m_image->allocate(m_publishImageResolution.m_width, m_publishImageResolution.m_height, GL_RGBA, GL_UNSIGNED_BYTE);
+    m_depthMesh->setUseTexture(true);
+
+    m_dephtWorld->addChild(m_depthMesh);
+    m_dephtWorld->addChild(m_camera);
+
+    m_depthBufferColorImage = cImage::create();
+    m_depthBufferColorImage->allocate(m_publishImageResolution.m_width, m_publishImageResolution.m_height, GL_RGBA, GL_UNSIGNED_INT);
+
+    cShaderProgramPtr shaderProgram;
+    if (depthComputeShaderAttribs->m_shaderDefined){
+        shaderProgram = afShaderUtils::createFromAttribs(depthComputeShaderAttribs, getQualifiedName(), "DEPTH_COMPUTE");
+    }
+    else{
+        cerr << "INFO! USING INTERNALLY DEFINED DEPTH_COMPUTE SHADERS" << endl;
+        shaderProgram = cShaderProgram::create(AF_DEPTH_COMPUTE_VTX, AF_DEPTH_COMPUTE_FRAG);
+    }
+
+    if (shaderProgram->linkProgram()){
+        cGenericObject* go;
+        cRenderOptions ro;
+        shaderProgram->use(go, ro);
+        m_depthMesh->setShaderProgram(shaderProgram);
+        shaderProgram->disable();
+
+        createDepthTransport(imageAttribs);
+        m_publishDepth = true;
+    }
+    else{
+        cerr << "ERROR! FOR DEPTH_TO_PC2 FAILED TO COMPILE/LINK SHADER FILES: " << endl;
+        m_publishDepth = false;
+    }
+}
+
+
+///
+/// \brief afCamera::makeWindowFullScreen
+/// \param a_fullscreen
+///
+void afCamera::makeWindowFullScreen(bool a_fullscreen)
+{
+    // get information about monitor
+    const GLFWvidmode* mode = glfwGetVideoMode(m_monitor);
+
+    // set fullscreen or window mode
+    if (a_fullscreen)
+    {
+        glfwSetWindowMonitor(m_window, m_monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        glfwSwapInterval(0);
+    }
+    else
+    {
+        int w = 0.8 * mode->height;
+        int h = 0.5 * mode->height;
+        int x = 0.5 * (mode->width - w);
+        int y = 0.5 * (mode->height - h);
+        glfwSetWindowMonitor(m_window, NULL, x, y, w, h, mode->refreshRate);
+        glfwSwapInterval(0);
+    }
+}
+
+
+///
+/// \brief afCamera::destroyWindow
+///
+void afCamera::destroyWindow()
+{
+    glfwDestroyWindow(m_window);
 }
 
 
@@ -7216,31 +8384,8 @@ void afCamera::preProcessingShadersUpdate()
 ///
 /// \brief afLight::afLight
 ///
-afLight::afLight(afWorldPtr a_afWorld): afBaseObject(a_afWorld){
+afLight::afLight(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(afType::LIGHT, a_afWorld, a_modelPtr){
 }
-
-///
-/// \brief afLight::createDefaultLight
-/// \return
-///
-bool afLight::createDefaultLight(){
-    cerr << "INFO: NO LIGHT SPECIFIED, USING DEFAULT LIGHTING" << endl;
-    m_spotLight = new cSpotLight(m_afWorld->m_chaiWorld);
-    m_namespace = m_afWorld->getNamespace();
-    m_name = "default_light";
-    addChildSceneObject(m_spotLight, cTransform());
-    m_spotLight->setLocalPos(cVector3d(0.0, 0.5, 2.5));
-    m_spotLight->setDir(0, 0, -1);
-    m_spotLight->setSpotExponent(0.3);
-    m_spotLight->setCutOffAngleDeg(60);
-    m_spotLight->setShadowMapEnabled(true);
-    m_spotLight->m_shadowMap->setQualityVeryHigh();
-    m_spotLight->setEnabled(true);
-    m_afWorld->addSceneObjectToWorld(m_spotLight);
-
-    return true;
-}
-
 
 bool afLight::createFromAttribs(afLightAttributes *a_attribs)
 {
@@ -7262,13 +8407,15 @@ bool afLight::createFromAttribs(afLightAttributes *a_attribs)
     cVector3d dir = to_cVector3d(attribs.m_direction);
     setDir(dir);
 
-    m_spotLight = new cSpotLight(m_afWorld->m_chaiWorld);
+    m_spotLight = new cSpotLight(m_afWorld->getChaiWorld());
 
     addChildSceneObject(m_spotLight, cTransform());
 
-    m_afWorld->addSceneObjectToWorld(m_spotLight);
-
     m_parentName = attribs.m_hierarchyAttribs.m_parentName;
+
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
 
     m_initialTransform = getLocalTransform();
 
@@ -7300,14 +8447,17 @@ bool afLight::createFromAttribs(afLightAttributes *a_attribs)
 
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFLightMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getLightMap());
 
-        afCreateCommInstance(afObjectType::LIGHT,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
                              getMaxPublishFrequency());
     }
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
 
     return valid;
 }
@@ -7355,8 +8505,22 @@ void afLight::setDir(const cVector3d &a_direction){
 }
 
 
+///
+/// \brief afLight::getInternalLight
+/// \return
+///
+cGenericLight *afLight::getInternalLight()
+{
+    return m_spotLight;
+}
+
+
+///
+/// \brief afLight::fetchCommands
+/// \param dt
+///
 void afLight::fetchCommands(double dt){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afLightCommPtr.get() != nullptr){
         ambf_msgs::LightCmd m_afCommand = m_afLightCommPtr->get_command();
 
@@ -7388,9 +8552,7 @@ void afLight::fetchCommands(double dt){
 
                 m_spotLight->setCutOffAngleDeg(cRadToDeg(cutoff_angle));
 
-                if (m_parentName.compare(parent_name) != 0){
-                    resolveParenting(parent_name);
-                }
+                resolveParent(parent_name);
             }
 
             m_read_count = 0;
@@ -7404,11 +8566,11 @@ void afLight::fetchCommands(double dt){
 ///
 /// \brief afLight::updatePositionFromDynamics
 ///
-void afLight::update()
+void afLight::update(double dt)
 {
 
     // update Transform data for m_ObjectPtr
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if(m_afLightCommPtr.get() != nullptr){
 
         if (m_paramsSet == false){
@@ -7438,7 +8600,7 @@ void afLight::update()
 }
 
 
-afModel::afModel(afWorldPtr a_afWorld): afBaseObject(a_afWorld){
+afModel::afModel(afWorldPtr a_afWorld): afIdentification(afType::MODEL){
     //    m_pickDragVector = new cMesh();
     //    cCreateArrow(m_pickDragVector);
     //    m_pickDragVector->m_material->setPurpleAmethyst();
@@ -7446,6 +8608,7 @@ afModel::afModel(afWorldPtr a_afWorld): afBaseObject(a_afWorld){
     //    m_pickDragVector->setUseDisplayList(true);
     //    m_pickDragVector->markForUpdate(false);
     //    m_chaiWorld->addVisualMesh(m_pickDragVector);
+    m_afWorld = a_afWorld;
 }
 
 
@@ -7476,7 +8639,11 @@ void afModel::remapName(string &name, string remap_idx_str){
     }
 }
 
-
+///
+/// \brief afModel::createFromAttribs
+/// \param a_attribs
+/// \return
+///
 bool afModel::createFromAttribs(afModelAttributes *a_attribs)
 {
     afModelAttributes& attribs = *a_attribs;
@@ -7489,12 +8656,14 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
 
     bool enable_comm = a_attribs->m_enableComm;
 
+    m_shaderAttribs = attribs.m_shaderAttribs;
+    loadShaderProgram();
+
     // Loading Rigid Bodies
     for (size_t i = 0; i < attribs.m_rigidBodyAttribs.size(); ++i) {
         afRigidBodyPtr rBodyPtr = new afRigidBody(m_afWorld, this);
         if (rBodyPtr->createFromAttribs(&attribs.m_rigidBodyAttribs[i])){
-            string remaped_name = m_afWorld->addAFRigidBody(rBodyPtr);
-            m_afRigidBodyMapLocal[rBodyPtr->getQualifiedIdentifier()] = rBodyPtr;
+            addRigidBody(rBodyPtr);
         }
     }
 
@@ -7502,8 +8671,7 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
     for (size_t i = 0; i < attribs.m_softBodyAttribs.size(); ++i) {
         afSoftBodyPtr sBodyPtr = new afSoftBody(m_afWorld, this);
         if (sBodyPtr->createFromAttribs(&attribs.m_softBodyAttribs[i])){
-            string remaped_name = m_afWorld->addAFSoftBody(sBodyPtr);
-            m_afSoftBodyMapLocal[sBodyPtr->getQualifiedIdentifier()] = sBodyPtr;
+            addSoftBody(sBodyPtr);
         }
     }
 
@@ -7511,8 +8679,7 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
     for (size_t i = 0; i < attribs.m_ghostObjectAttribs.size(); ++i) {
         afGhostObjectPtr gObjPtr = new afGhostObject(m_afWorld, this);
         if (gObjPtr->createFromAttribs(&attribs.m_ghostObjectAttribs[i])){
-            string remaped_name = m_afWorld->addAFGhostObject(gObjPtr);
-            m_afGhostObjectMapLocal[gObjPtr->getQualifiedIdentifier()] = gObjPtr;
+            addGhostObject(gObjPtr);
         }
     }
 
@@ -7544,7 +8711,7 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
         }
 
         if (valid){
-            string remaped_name = m_afWorld->addAFSensor(sensorPtr);
+            addSensor(sensorPtr);
         }
     }
 
@@ -7566,28 +8733,52 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
         }
 
         if (valid){
-            string remaped_name = m_afWorld->addAFActuator(actuatorPtr);
+            addActuator(actuatorPtr);
         }
     }
 
-    // Loading Joints
+    // Load Joints
     for (size_t i = 0; i < attribs.m_jointAttribs.size(); ++i) {
         afJointPtr jntPtr = new afJoint(m_afWorld, this);
         if (jntPtr->createFromAttribs(&attribs.m_jointAttribs[i])){
-            string remaped_name = m_afWorld->addAFJoint(jntPtr);
-            m_afJointMapLocal[jntPtr->getQualifiedIdentifier()] = jntPtr;
+            addJoint(jntPtr);
         }
     }
 
-
-    afVehiclePtr vehiclePtr;
+    // Load Vehicles
     for (size_t i = 0; i < attribs.m_vehicleAttribs.size(); ++i) {
-        vehiclePtr = new afVehicle(m_afWorld, this);
+        afVehiclePtr vehiclePtr = new afVehicle(m_afWorld, this);
         if (vehiclePtr->createFromAttribs(&attribs.m_vehicleAttribs[i])){
-            string remap_name = m_afWorld->addAFVehicle(vehiclePtr);
-            m_afVehicleMapLocal[vehiclePtr->getQualifiedIdentifier()] = vehiclePtr;
+            addVehicle(vehiclePtr);
         }
     }
+
+    // Load Cameras
+    for (size_t i = 0; i < attribs.m_cameraAttribs.size(); ++i) {
+        afCameraPtr cameraPtr = new afCamera(m_afWorld, this);
+        if (cameraPtr->createFromAttribs(&attribs.m_cameraAttribs[i])){
+            addCamera(cameraPtr);
+        }
+    }
+
+    // Load Lights
+    for (size_t i = 0; i < attribs.m_lightAttribs.size(); ++i) {
+        afLightPtr lightPtr = new afLight(m_afWorld, this);
+        if (lightPtr->createFromAttribs(&attribs.m_lightAttribs[i])){
+            addLight(lightPtr);
+        }
+    }
+
+    // Load Volumes
+    for (size_t i = 0; i < attribs.m_volumeAttribs.size(); ++i) {
+        afVolumePtr volumePtr = new afVolume(m_afWorld, this);
+        if (volumePtr->createFromAttribs(&attribs.m_volumeAttribs[i])){
+            addVolume(volumePtr);
+        }
+    }
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
 
     // This flag would ignore collision for all the multibodies in the scene
 
@@ -7602,28 +8793,133 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
 
 
 ///
-/// \brief afModel::getRigidBody
-/// \param a_name
-/// \param suppress_warning
+/// \brief afModel::loadPlugins
+/// \param pluginAttribs
 /// \return
 ///
-afRigidBodyPtr afModel::getAFRigidBodyLocal(string a_name, bool suppress_warning){
-    if (m_afRigidBodyMapLocal.find(a_name) != m_afRigidBodyMapLocal.end()){
-        return m_afRigidBodyMapLocal[a_name];
+bool afModel::loadPlugins(vector<afPluginAttributes> *pluginAttribs)
+{
+    for (int i = 0 ; i < pluginAttribs->size(); i++){
+        m_pluginManager.add((*pluginAttribs)[i].m_filename, (*pluginAttribs)[i].m_name, (*pluginAttribs)[i].m_path.c_str());
     }
-    else{
-        if (!suppress_warning){
-            cerr << "WARNING: CAN'T FIND ANY BODY NAMED: " << a_name << " IN LOCAL MAP" << endl;
 
-            cerr <<"Existing Bodies in Map: " << m_afRigidBodyMapLocal.size() << endl;
-            afRigidBodyMap::iterator rbIt = m_afRigidBodyMapLocal.begin();
-            for (; rbIt != m_afRigidBodyMapLocal.end() ; ++rbIt){
-                cerr << rbIt->first << endl;
-            }
+    return true;
+}
+
+
+///
+/// \brief afModel::fetchCommands
+/// \param dt
+///
+void afModel::fetchCommands(double dt)
+{
+    // Read the AF_COMM commands and apply to all different types of objects
+    afChildrenMap::iterator cIt;
+
+    for(cIt = m_childrenObjectsMap.begin(); cIt != m_childrenObjectsMap.end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            childObj->fetchCommands(dt);
         }
-        return nullptr;
     }
 }
+
+
+///
+/// \brief afModel::update
+/// \param dt
+///
+void afModel::update(double dt)
+{
+    afChildrenMap::iterator cIt;
+
+    for(cIt = m_childrenObjectsMap.begin(); cIt != m_childrenObjectsMap.end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            childObj->update(dt);
+        }
+    }
+}
+
+
+///
+/// \brief afModel::updateGlobalPose
+///
+void afModel::updateGlobalPose()
+{
+    afChildrenMap::iterator cIt;
+
+    // Update global poses of all objects first
+    for(cIt = m_childrenObjectsMap.begin(); cIt != m_childrenObjectsMap.end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            childObj->updateGlobalPose(false);
+        }
+    }
+
+}
+
+
+///
+/// \brief afModel::updateSceneObjects
+///
+void afModel::updateSceneObjects()
+{
+    // Then update all scene objects
+    for(afChildrenMap::iterator cIt = m_childrenObjectsMap.begin(); cIt != m_childrenObjectsMap.end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            childObj->updateSceneObjects();
+        }
+    }
+}
+
+
+///
+/// \brief afModel::loadShaderProgram
+///
+void afModel::loadShaderProgram()
+{
+    if (m_shaderAttribs.m_shaderDefined){
+        m_shaderProgram = afShaderUtils::createFromAttribs(&m_shaderAttribs, getQualifiedName(), "GLOBAL_SHADERS");
+    }
+}
+
+///
+/// \brief afModel::pluginsGraphicsUpdate
+///
+void afModel::pluginsGraphicsUpdate()
+{
+    m_pluginManager.graphicsUpdate();
+    for(afChildrenMap::iterator cIt = m_childrenObjectsMap.begin(); cIt != m_childrenObjectsMap.end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            childObj->pluginsGraphicsUpdate();
+        }
+    }
+}
+
+///
+/// \brief afModel::pluginsPhysicsUpdate
+/// \param dt
+///
+void afModel::pluginsPhysicsUpdate(double dt)
+{
+    m_pluginManager.physicsUpdate(dt);
+    for(afChildrenMap::iterator cIt = m_childrenObjectsMap.begin(); cIt != m_childrenObjectsMap.end(); ++cIt)
+    {
+        for (afBaseObjectMap::iterator oIt = cIt->second.begin() ; oIt != cIt->second.end() ; ++oIt){
+            afBaseObject* childObj = oIt->second;
+            childObj->pluginsPhysicsUpdate(dt);
+        }
+    }
+}
+
 
 ///
 /// \brief afModel::removeCollisionChecking
@@ -7633,12 +8929,12 @@ void afModel::ignoreCollisionChecking(){
     /// Only ignore collision checking between the bodies
     /// defined in the specific model config file
     /// and not all the bodies in the world
-    afRigidBodyMap::iterator rBodyItA = m_afRigidBodyMapLocal.begin();
+    afBaseObjectMap::iterator rBodyItA = getRigidBodyMap()->begin();
     vector<btRigidBody*> rBodiesVec;
-    rBodiesVec.resize(m_afRigidBodyMapLocal.size());
+    rBodiesVec.resize(getRigidBodyMap()->size());
     uint i=0;
-    for ( ; rBodyItA != m_afRigidBodyMapLocal.end() ; ++rBodyItA){
-        rBodiesVec[i] = rBodyItA->second->m_bulletRigidBody;
+    for ( ; rBodyItA != getRigidBodyMap()->end() ; ++rBodyItA){
+        rBodiesVec[i] = ((afRigidBodyPtr)rBodyItA->second)->m_bulletRigidBody;
         i++;
     }
     if (rBodiesVec.size() >0){
@@ -7659,13 +8955,13 @@ void afModel::removeOverlappingCollisionChecking(){
     // if there are more than 1, it means that multiple bodies share each other
     // In this case, iteratively go over all the shared bodies and ignore their
     // collision if their common body has the same pivot
-    afRigidBodyMap* rbMap = m_afWorld->getAFRigidBodyMap();
-    afRigidBodyMap::iterator rBodyIt = rbMap->begin();
+    afBaseObjectMap* rbMap = m_afWorld->getRigidBodyMap();
+    afBaseObjectMap::iterator rBodyIt = rbMap->begin();
     vector<btRigidBody*> bodyFamily;
     pair<btVector3, btRigidBody*> pvtAandConnectedBody;
     vector< pair<btVector3, btRigidBody*> > pvtAandConnectedBodyVec;
     for ( ; rBodyIt != rbMap->end() ; ++rBodyIt){
-        afRigidBodyPtr afBody = rBodyIt->second;
+        afRigidBodyPtr afBody = (afRigidBody*)rBodyIt->second;
         btRigidBody* rBody = afBody->m_bulletRigidBody;
         bodyFamily.clear();
         for(int cIdx = 0 ; cIdx < rBody->getNumConstraintRefs() ; cIdx++){
@@ -7702,335 +8998,6 @@ void afModel::removeOverlappingCollisionChecking(){
 }
 
 
-
-template <typename T, typename TMap>
-///
-/// \brief afWorld::addObject
-/// \param a_obj
-/// \param a_name
-/// \param a_map
-/// \return
-///
-bool afWorld::addAFObject(T a_obj, string a_name, TMap* a_map){
-    (*a_map)[a_name] = a_obj;
-    if (checkIfExists(a_obj) == false){
-        m_childrenAFObjects.push_back(a_obj);
-        a_obj->showVisualFrame();
-    }
-    return true;
-}
-
-
-template <typename T, typename TMap>
-///
-/// \brief afWorld::getObject
-/// \param a_name
-/// \param map
-/// \param suppress_warning
-/// \return
-///
-T afWorld::getAFObject(string a_name, TMap* a_map, bool suppress_warning){
-    if (a_map->find(a_name) != a_map->end()){
-        return ((*a_map)[a_name]);
-    }
-    // We didn't find the object using the full name, try checking if the name is a substring of the fully qualified name
-    int matching_obj_count = 0;
-    vector<string> matching_obj_names;
-    T objHandle;
-    typename TMap::iterator oIt = a_map->begin();
-    for (; oIt != a_map->end() ; ++oIt){
-        if (oIt->first.find(a_name) != string::npos){
-            matching_obj_count++;
-            matching_obj_names.push_back(oIt->first);
-            objHandle = oIt->second;
-        }
-    }
-
-    if (matching_obj_count == 1){
-        // If only one object is found, return that object
-        return objHandle;
-    }
-    else if(matching_obj_count > 1){
-        cerr << "WARNING: MULTIPLE OBJECTS WITH SUB-STRING: \"" << a_name << "\" FOUND. PLEASE SPECIFY FURTHER\n";
-        for (int i = 0 ; i < matching_obj_names.size() ; i++){
-            cerr << "\t" << i << ") " << matching_obj_names[i] << endl;
-        }
-        return nullptr;
-    }
-    else{
-        if (!suppress_warning){
-            cerr << "WARNING: CAN'T FIND ANY OBJECTS NAMED: \"" << a_name << "\" IN GLOBAL MAP \n";
-
-            cerr <<"Existing OBJECTS in Map: " << a_map->size() << endl;
-            typename TMap::iterator oIt = a_map->begin();
-            for (; oIt != a_map->end() ; ++oIt){
-                cerr << oIt->first << endl;
-            }
-        }
-        return nullptr;
-    }
-}
-
-
-template <typename TVec, typename TMap>
-///
-/// \brief afWorld::getObjects
-/// \param a_map
-/// \return
-///
-TVec afWorld::getAFObjects(TMap* a_map){
-    TVec objects;
-    typename TMap::iterator oIt;
-
-    for (oIt = a_map->begin() ; oIt != a_map->end() ; ++oIt){
-        objects.push_back(oIt->second);
-    }
-
-    return objects;
-}
-
-
-///
-/// \brief afWorld::getAFLight
-/// \param a_name
-/// \param suppress_warning
-/// \return
-///
-afLightPtr afWorld::getAFLight(string a_name, bool suppress_warning){
-    return getAFObject<afLightPtr, afLightMap>(a_name, &m_afLightMap, suppress_warning);
-}
-
-
-///
-/// \brief afWorld::getAFCamera
-/// \param a_name
-/// \param suppress_warning
-/// \return
-///
-afCameraPtr afWorld::getAFCamera(string a_name, bool suppress_warning){
-    return getAFObject<afCameraPtr, afCameraMap>(a_name, &m_afCameraMap, suppress_warning);
-}
-
-
-///
-/// \brief afModel::getRidigBody
-/// \param a_name
-/// \return
-///
-afRigidBodyPtr afWorld::getAFRigidBody(string a_name, bool suppress_warning){
-    return getAFObject<afRigidBodyPtr, afRigidBodyMap>(a_name, &m_afRigidBodyMap, suppress_warning);
-}
-
-
-///
-/// \brief afWorld::getAFRigidBody
-/// \param a_body
-/// \param suppress_warning
-/// \return
-///
-afRigidBodyPtr afWorld::getAFRigidBody(btRigidBody* a_body, bool suppress_warning){
-    afRigidBodyMap::iterator afIt;
-    for (afIt = m_afRigidBodyMap.begin() ; afIt != m_afRigidBodyMap.end() ; ++ afIt){
-        afRigidBodyPtr afBody = afIt->second;
-        if (a_body == afBody->m_bulletRigidBody){
-            return afBody;
-        }
-    }
-    if (!suppress_warning){
-        cerr << "WARNING: CAN'T FIND ANY BODY BOUND TO BULLET RIGID BODY: \"" << a_body << "\"\n";
-
-        cerr <<"Existing Bodies in Map: " << m_afRigidBodyMap.size() << endl;
-        afRigidBodyMap::iterator rbIt = m_afRigidBodyMap.begin();
-        for (; rbIt != m_afRigidBodyMap.end() ; ++rbIt){
-            cerr << rbIt->first << endl;
-        }
-    }
-    return nullptr;
-}
-
-
-///
-/// \brief afWorld::getAFSoftBody
-/// \param a_name
-/// \param suppress_warning
-/// \return
-///
-afSoftBodyPtr afWorld::getAFSoftBody(string a_name, bool suppress_warning){
-    return getAFObject<afSoftBodyPtr, afSoftBodyMap>(a_name, &m_afSoftBodyMap, suppress_warning);
-}
-
-
-///
-/// \brief afWorld::getAFSoftBody
-/// \param a_body
-/// \param suppress_warning
-/// \return
-///
-afSoftBodyPtr afWorld::getAFSoftBody(btSoftBody* a_body, bool suppress_warning){
-    afSoftBodyMap::iterator afIt;
-    for (afIt = m_afSoftBodyMap.begin() ; afIt != m_afSoftBodyMap.end() ; ++ afIt){
-        afSoftBodyPtr afBody = afIt->second;
-        if (a_body == afBody->m_bulletSoftBody){
-            return afBody;
-        }
-    }
-    if (!suppress_warning){
-        cerr << "WARNING: CAN'T FIND ANY BODY BOUND TO BULLET SOFT BODY: \"" << a_body << "\"\n";
-
-        cerr <<"Existing Soft Bodies in Map: " << m_afSoftBodyMap.size() << endl;
-        afSoftBodyMap::iterator sbIt = m_afSoftBodyMap.begin();
-        for (; sbIt != m_afSoftBodyMap.end() ; ++sbIt){
-            cerr << sbIt->first << endl;
-        }
-    }
-    return nullptr;
-}
-
-afGhostObjectPtr afWorld::getAFGhostObject(string a_name, bool suppress_warning)
-{
-    return getAFObject<afGhostObjectPtr, afGhostObjectMap>(a_name, &m_afGhostObjectMap, suppress_warning);
-}
-
-afGhostObjectPtr afWorld::getAFGhostObject(btGhostObject *a_body, bool suppress_warning)
-{
-    afGhostObjectMap::iterator afIt;
-    for (afIt = m_afGhostObjectMap.begin() ; afIt != m_afGhostObjectMap.end() ; ++ afIt){
-        afGhostObjectPtr afObj = afIt->second;
-        if (a_body == afObj->m_bulletGhostObject){
-            return afObj;
-        }
-    }
-    if (!suppress_warning){
-        cerr << "WARNING: CAN'T FIND ANY OBJECT BOUND TO BULLET GHOST OBJECT: \"" << a_body << "\"\n";
-
-        cerr <<"Existing Objects in Map: " << m_afGhostObjectMap.size() << endl;
-        afGhostObjectMap::iterator goIt = m_afGhostObjectMap.begin();
-        for (; goIt != m_afGhostObjectMap.end() ; ++goIt){
-            cerr << goIt->first << endl;
-        }
-    }
-    return nullptr;
-}
-
-
-///
-/// \brief afWorld::getAFModel
-/// \param a_name
-/// \param suppress_warning
-/// \return
-///
-afModelPtr afWorld::getAFModel(string a_name, bool suppress_warning){
-    return getAFObject<afModelPtr, afModelMap>(a_name, &m_afModelMap, suppress_warning);
-}
-
-
-///
-/// \brief afWorld::getAFVehicle
-/// \param a_name
-/// \param suppress_warning
-/// \return
-///
-afVehiclePtr afWorld::getAFVehicle(string a_name, bool suppress_warning){
-    return getAFObject<afVehiclePtr, afVehicleMap>(a_name, &m_afVehicleMap, suppress_warning);
-}
-
-
-///
-/// \brief afModel::getRootRigidBody
-/// \param a_bodyPtr
-/// \return
-///
-afRigidBodyPtr afWorld::getRootAFRigidBody(afRigidBodyPtr a_bodyPtr){
-    if (!a_bodyPtr){
-        cerr << "ERROR, BODY PTR IS NULL, CAN\'T LOOK UP ROOT BODIES" << endl;
-        return nullptr;
-    }
-
-    /// Find Root Body
-    afRigidBodyPtr rootParentBody;
-    vector<int> bodyParentsCount;
-    size_t rootParents = 0;
-    if (a_bodyPtr->m_parentBodies.size() == 0){
-        rootParentBody = a_bodyPtr;
-        rootParents++;
-    }
-    else{
-        bodyParentsCount.resize(a_bodyPtr->m_parentBodies.size());
-        vector<afRigidBodyPtr>::const_iterator rIt = a_bodyPtr->m_parentBodies.begin();
-        for (uint parentNum=0; rIt != a_bodyPtr->m_parentBodies.end() ; parentNum++, ++rIt){
-            if ((*rIt)->m_parentBodies.size() == 0){
-                rootParentBody = (*rIt);
-                rootParents++;
-            }
-            bodyParentsCount[parentNum] = (*rIt)->m_parentBodies.size();
-        }
-    }
-
-    // In case no root parent is found, it is understood that
-    // the model chain is cyclical, perhaps return
-    // the body with least number of parents
-    if (rootParents == 0){
-        auto minLineage = min_element(bodyParentsCount.begin(), bodyParentsCount.end());
-        int idx = distance(bodyParentsCount.begin(), minLineage);
-        rootParentBody = a_bodyPtr->m_parentBodies[idx];
-        rootParents++;
-        cerr << "WARNING! CYCLICAL CHAIN OF BODIES FOUND WITH NO UNIQUE PARENT, RETURING THE BODY WITH LEAST PARENTS";
-    }
-
-    if (rootParents > 1)
-        cerr << "WARNING! " << rootParents << " ROOT PARENTS FOUND, RETURNING THE LAST ONE\n";
-
-    return rootParentBody;
-}
-
-
-///
-/// \brief afModel::getRootAFRigidBody
-/// \param a_bodyPtr
-/// \return
-///
-afRigidBodyPtr afModel::getRootAFRigidBodyLocal(afRigidBodyPtr a_bodyPtr){
-    /// Find Root Body
-    afRigidBodyPtr rootParentBody;
-    vector<int> bodyParentsCount;
-    size_t rootParents = 0;
-    if (a_bodyPtr){
-        if (a_bodyPtr->m_parentBodies.size() == 0){
-            rootParentBody = a_bodyPtr;
-            rootParents++;
-        }
-        else{
-            bodyParentsCount.resize(a_bodyPtr->m_parentBodies.size());
-            vector<afRigidBodyPtr>::const_iterator rIt = a_bodyPtr->m_parentBodies.begin();
-            for (int parentNum=0; rIt != a_bodyPtr->m_parentBodies.end() ; parentNum++, ++rIt){
-                if ((*rIt)->m_parentBodies.size() == 0){
-                    rootParentBody = (*rIt);
-                    rootParents++;
-                }
-                bodyParentsCount[parentNum] = (*rIt)->m_parentBodies.size();
-            }
-        }
-    }
-    else{
-        bodyParentsCount.resize(m_afRigidBodyMapLocal.size());
-        afRigidBodyMap::const_iterator mIt = m_afRigidBodyMapLocal.begin();
-        for(int bodyNum=0; mIt != m_afRigidBodyMapLocal.end() ; bodyNum++, ++mIt){
-            if ((*mIt).second->m_parentBodies.size() == 0){
-                rootParentBody = (*mIt).second;
-                ++rootParents;
-            }
-            bodyParentsCount[bodyNum] = (*mIt).second->m_parentBodies.size();
-        }
-
-    }
-
-    if (rootParents > 1)
-        cerr << "WARNING! " << rootParents << " ROOT PARENTS FOUND, RETURNING THE LAST ONE\n";
-
-    return rootParentBody;
-}
-
-
 ///
 /// \brief afModel::~afModel
 ///
@@ -8048,10 +9015,10 @@ afModel::~afModel(){
     //    for ( ; sIt != m_afSoftBodyMap.end() ; ++sIt){
     //        delete sIt->second;
     //    }
+    m_pluginManager.close();
 }
 
-afVehicle::afVehicle(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(a_afWorld, a_modelPtr){
-
+afVehicle::afVehicle(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(afType::VEHICLE, a_afWorld, a_modelPtr){
 }
 
 afVehicle::~afVehicle()
@@ -8081,7 +9048,7 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
     setMaxPublishFrequency(attribs.m_communicationAttribs.m_maxPublishFreq);
     setPassive(attribs.m_communicationAttribs.m_passive);
 
-    m_chassis = m_afWorld->getAFRigidBody(attribs.m_chassisBodyName);
+    m_chassis = m_afWorld->getRigidBody(attribs.m_chassisBodyName);
 
     if (m_chassis == nullptr){
         result = false;
@@ -8111,14 +9078,14 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
             else{
                 m_wheels[i].m_wheelRepresentationType = afWheelRepresentationType::INVALID;
                 cerr << "ERROR! UNABLE TO FIND WHEEL IDX " << i << " MESH NAMED \"" << meshFilepath << "\" FOR VEHICLE \""
-                          << m_name << "\", SKIPPING WHEEL!" << endl;
+                     << m_name << "\", SKIPPING WHEEL!" << endl;
                 continue;
             }
             break;
         }
         case afWheelRepresentationType::RIGID_BODY:{
             string rbName = m_wheelAttribs[i].m_wheelBodyName;
-            m_wheels[i].m_wheelBody = m_afWorld->getAFRigidBody(rbName);
+            m_wheels[i].m_wheelBody = m_afWorld->getRigidBody(rbName);
             if (m_wheels[i].m_wheelBody){
                 // Since the wheel in the RayCast car in implicit. Disable the dynamic
                 // properties of this wheel.
@@ -8132,7 +9099,7 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
             else{
                 m_wheels[i].m_wheelRepresentationType = afWheelRepresentationType::INVALID;
                 cerr << "ERROR! UNABLE TO FIND WHEEL IDX " << i << " BODY NAMED \"" << rbName << "\" FOR VEHICLE \""
-                          << m_name << "\", SKIPPING WHEEL!" << endl;
+                     << m_name << "\", SKIPPING WHEEL!" << endl;
                 continue;
             }
             break;
@@ -8142,7 +9109,7 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
         default:{
             m_wheels[i].m_wheelRepresentationType = afWheelRepresentationType::INVALID;
             cerr << "ERROR! UNABLE TO FIND \"MESH\" OR \"BODY\" FIELD FOR WHEEL OF VEHICLE \""
-                      << m_name << "\", SKIPPING WHEEL!" << endl;
+                 << m_name << "\", SKIPPING WHEEL!" << endl;
             continue;
         }
         };
@@ -8181,9 +9148,9 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
 
     if (isPassive() == false){
 
-        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedName(), m_afWorld->getAFVehicleMap());
+        string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getVehicleMap());
 
-        afCreateCommInstance(afObjectType::VEHICLE,
+        afCreateCommInstance(m_type,
                              getQualifiedName() + remap_idx,
                              m_afWorld->getGlobalNamespace(),
                              getMinPublishFrequency(),
@@ -8199,7 +9166,7 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
 /// \param dt
 ///
 void afVehicle::fetchCommands(double dt){
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     ambf_msgs::VehicleCmd af_cmd = m_afVehicleCommPtr->get_command();
 
     int maxWheelCount;
@@ -8264,7 +9231,7 @@ void afVehicle::fetchCommands(double dt){
 ///
 /// \brief afVehicle::updatePositionFromDynamics
 ///
-void afVehicle::update(){
+void afVehicle::update(double dt){
     for (uint i = 0; i < m_numWheels ; i++){
         m_vehicle->updateWheelTransform(i, true);
         btTransform btTrans = m_vehicle->getWheelInfo(i).m_worldTransform;
@@ -8274,7 +9241,7 @@ void afVehicle::update(){
             m_wheels[i].m_mesh->setLocalTransform(cTrans);
         }
         else if (m_wheels[i].m_wheelRepresentationType == afWheelRepresentationType::RIGID_BODY){
-//            m_wheels[i].m_wheelBody->m_bulletRigidBody->setWorldTransform(btTrans);
+            //            m_wheels[i].m_wheelBody->m_bulletRigidBody->setWorldTransform(btTrans);
             m_wheels[i].m_wheelBody->m_bulletRigidBody->getMotionState()->setWorldTransform(btTrans);
         }
         else{
@@ -8283,7 +9250,7 @@ void afVehicle::update(){
 
     }
 
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     if (m_afVehicleCommPtr.get() != nullptr){
 
         afUpdateTimes(m_afWorld->getWallTime(), m_afWorld->getSimulationTime());
@@ -8335,22 +9302,21 @@ afDepthPointCloud::~afDepthPointCloud()
 
 //------------------------------------------------------------------------------
 
-afPointCloud::afPointCloud(afWorldPtr a_afWorld): afBaseObject(a_afWorld)
+afPointCloud::afPointCloud(afWorldPtr a_afWorld): afBaseObject(afType::POINT_CLOUD, a_afWorld)
 {
 
 }
 
 
-void afPointCloud::update()
+void afPointCloud::update(double dt)
 {
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
-    int mp_size = m_mpPtr->getNumPoints();
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
     sensor_msgs::PointCloudPtr pcPtr = m_pcCommPtr->get_point_cloud();
     if(pcPtr){
         double radius = m_pcCommPtr->get_radius();
         m_mpPtr->setPointSize(radius);
         int pc_size = pcPtr->points.size();
-        int diff = pc_size - mp_size;
+        int diff = pc_size - m_mpSize;
         string frame_id = pcPtr->header.frame_id;
 
         if (m_parentName.compare(frame_id) != 0 ){
@@ -8359,9 +9325,10 @@ void afPointCloud::update()
                 m_mpPtr->getParent()->removeChild(m_mpPtr);
             }
 
-            afRigidBodyPtr pBody = m_afWorld->getAFRigidBody(frame_id);
+            afRigidBodyPtr pBody = m_afWorld->getRigidBody(frame_id);
             if(pBody){
-                pBody->addChildObject(this);
+//                pBody->addChildObject(this);
+                pBody->m_visualMesh->addChild(this->m_mpPtr);
             }
             else{
                 // Parent not found.
@@ -8375,7 +9342,7 @@ void afPointCloud::update()
 
         if (diff >= 0){
             // PC array has either increased in size or the same size as MP array
-            for (int pIdx = 0 ; pIdx < mp_size ; pIdx++){
+            for (int pIdx = 0 ; pIdx < m_mpSize ; pIdx++){
                 cVector3d pcPos(pcPtr->points[pIdx].x,
                                 pcPtr->points[pIdx].y,
                                 pcPtr->points[pIdx].z);
@@ -8383,7 +9350,7 @@ void afPointCloud::update()
             }
 
             // Now add the new PC points to MP
-            for (int pIdx = mp_size ; pIdx < mp_size + pc_size ; pIdx++){
+            for (int pIdx = m_mpSize ; pIdx < pc_size ; pIdx++){
                 cVector3d pcPos(pcPtr->points[pIdx].x,
                                 pcPtr->points[pIdx].y,
                                 pcPtr->points[pIdx].z);
@@ -8399,17 +9366,18 @@ void afPointCloud::update()
                 m_mpPtr->m_points->m_vertices->setLocalPos(pIdx, pcPos);
             }
 
-            for (int pIdx = mp_size ; pIdx > pc_size ; pIdx--){
+            for (int pIdx = m_mpSize ; pIdx > pc_size ; pIdx--){
                 m_mpPtr->removePoint(pIdx-1);
             }
         }
+        m_mpSize = pc_size;
 
     }
 
 #endif
 }
 
-afGhostObject::afGhostObject(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(a_afWorld, a_modelPtr)
+afGhostObject::afGhostObject(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObject(afType::GHOST_OBJECT, a_afWorld, a_modelPtr)
 {
     m_bulletGhostObject = nullptr;
 }
@@ -8426,11 +9394,11 @@ afGhostObject::~afGhostObject()
     }
 }
 
-void afGhostObject::update()
+void afGhostObject::update(double dt)
 {
-//    cTransform trans;
-//    trans << m_bulletGhostObject->getWorldTransform();
-//    setLocalTransform(trans);
+    //    cTransform trans;
+    //    trans << m_bulletGhostObject->getWorldTransform();
+    //    setLocalTransform(trans);
     m_bulletGhostObject->setWorldTransform(to_btTransform(m_globalTransform));
     vector<btRigidBody*> localSensedBodies;
 
@@ -8526,7 +9494,11 @@ bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
     setNamespace(attribs.m_identificationAttribs.m_namespace);
     m_parentName = attribs.m_hierarchyAttribs.m_parentName;
 
-    m_bulletGhostObject = new btPairCachingGhostObject();
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
+
+    createInertialObject();
 
     m_visualMesh = new cMultiMesh();
     m_collisionMesh = new cMultiMesh();
@@ -8552,8 +9524,8 @@ bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
         }
         else{
             cerr << "WARNING: Body "
-                      << m_name
-                      << "'s mesh \"" << m_collisionMeshFilePath.c_str() << "\" not found\n";
+                 << m_name
+                 << "'s mesh \"" << m_collisionMeshFilePath.c_str() << "\" not found\n";
             return false;
         }
     }
@@ -8599,8 +9571,7 @@ bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
         setLocalTransform(trans);
 
         addChildSceneObject(m_visualMesh, cTransform());
-        m_afWorld->addSceneObjectToWorld(m_visualMesh);
-        m_afWorld->addSceneObjectToWorld(m_collisionMesh);
+        addChildSceneObject(m_visualMesh, cTransform());
 
         for (uint gI = 0 ; gI < attribs.m_collisionAttribs.m_groups.size() ; gI++){
             uint group =  attribs.m_collisionAttribs.m_groups[gI];
@@ -8611,14 +9582,23 @@ bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
             }
             else{
                 cerr << "WARNING: Ghost's "
-                          << m_name
-                          << "'s group number is \"" << group << "\" which should be between [0 - 999], ignoring\n";
+                     << m_name
+                     << "'s group number is \"" << group << "\" which should be between [0 - 999], ignoring\n";
             }
         }
         valid = true;
     }
 
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
+
     return valid;
+}
+
+void afGhostObject::createInertialObject()
+{
+    m_bulletGhostObject = new btPairCachingGhostObject();
+    m_bulletGhostObject->setUserPointer(this);
 }
 
 void afGhostObject::setLocalTransform(cTransform &trans)
@@ -8631,29 +9611,204 @@ cShaderProgramPtr afShaderUtils::createFromAttribs(afShaderAttributes *attribs, 
 {
     cShaderProgramPtr shaderProgram;
     if (attribs->m_shaderDefined){
-        ifstream vsFile;
-        ifstream fsFile;
-        vsFile.open(attribs->m_vtxFilepath.c_str());
-        fsFile.open(attribs->m_fragFilepath.c_str());
-        // create a string stream
-        stringstream vsBuffer, fsBuffer;
-        // dump the contents of the file into it
-        vsBuffer << vsFile.rdbuf();
-        fsBuffer << fsFile.rdbuf();
-        // close the files
-        vsFile.close();
-        fsFile.close();
-        shaderProgram = cShaderProgram::create(vsBuffer.str(), fsBuffer.str());
+        string vtxShader = afUtils::loadFileContents(attribs->m_vtxFilepath.c_str());
+        string fragShader = afUtils::loadFileContents(attribs->m_fragFilepath.c_str());
+        shaderProgram = cShaderProgram::create(vtxShader, fragShader);
         if (shaderProgram->linkProgram()){
             cerr << "INFO! FOR OBJECT: "<< objName << ", LOADING SHADER TYPE " << type << " FROM FILES: " <<
-                         "\n \t VERTEX: " << attribs->m_vtxFilepath.c_str() <<
-                         "\n \t FRAGMENT: " << attribs->m_fragFilepath.c_str() << endl;
+                    "\n \t VERTEX: " << attribs->m_vtxFilepath.c_str() <<
+                    "\n \t FRAGMENT: " << attribs->m_fragFilepath.c_str() << endl;
         }
         else{
             cerr << "ERROR! FOR OBJECT: "<< objName << ", FAILED TO LOAD SHADER TYPE " << type << " FROM FILES: " <<
-                         "\n \t VERTEX: " << attribs->m_vtxFilepath.c_str() <<
-                         "\n \t FRAGMENT: " << attribs->m_fragFilepath.c_str() << endl;
+                    "\n \t VERTEX: " << attribs->m_vtxFilepath.c_str() <<
+                    "\n \t FRAGMENT: " << attribs->m_fragFilepath.c_str() << endl;
         }
     }
     return shaderProgram;
+}
+
+void afNoiseModel::createFromAttribs(afNoiseModelAttribs *a_attribs)
+{
+    m_attribs = *a_attribs;
+
+    // Init Generator and Distribution
+
+    m_randomNumberGenerator = default_random_engine(time(0));
+    m_randomDistribution = new normal_distribution<double>(m_attribs.m_mean, m_attribs.m_std_dev);
+}
+
+///
+/// \brief afVolume::afVolume
+/// \param a_afWorld
+/// \param a_modelPtr
+///
+afVolume::afVolume(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afBaseObject(afType::VOLUME, a_afWorld, a_modelPtr)
+{
+
+}
+
+
+///
+/// \brief afVolume::~afVolume
+///
+afVolume::~afVolume()
+{
+
+}
+
+///
+/// \brief afVolume::createFromAttribs
+/// \param a_attribs
+/// \return
+///
+bool afVolume::createFromAttribs(afVolumeAttributes *a_attribs)
+{
+    m_attribs = *a_attribs;
+    afVolumeAttributes &attribs = *a_attribs;
+
+    setNamespace(attribs.m_identificationAttribs.m_namespace);
+    setName(attribs.m_identificationAttribs.m_name);
+    setIdentifier(attribs.m_identifier);
+    m_parentName = attribs.m_hierarchyAttribs.m_parentName;
+
+    setLocalTransform(attribs.m_kinematicAttribs.m_location);
+    m_scale = attribs.m_kinematicAttribs.m_scale;
+
+    if (m_attribs.m_specificationType == afVolumeSpecificationType::MULTI_IMAGE){
+        m_multiImage = cMultiImage::create();
+        string path_and_prefix = m_attribs.m_multiImageAttribs.m_path.c_str() + "/" + m_attribs.m_multiImageAttribs.m_prefix;
+        if (m_multiImage->loadFromFiles(path_and_prefix, m_attribs.m_multiImageAttribs.m_format, m_attribs.m_multiImageAttribs.m_count)){
+
+            m_voxelObject = new cVoxelObject();
+            // Setting transparency before setting the texture ensures that the rendering does not show empty spaces as black
+            // and the depth point cloud is able to see the volume
+            m_voxelObject->setTransparencyLevel(1.0);
+
+            cTexture3dPtr texture = cTexture3d::create();
+            texture->setImage(m_multiImage);
+            m_voxelObject->setTexture(texture);
+
+            // set the dimensions by assigning the position of the min and max corners
+            m_voxelObject->m_minCorner << ( attribs.m_dimensions / -2.0) * m_scale;
+            m_voxelObject->m_maxCorner << ( attribs.m_dimensions / 2.0) * m_scale;
+
+            // set the texture coordinate at each corner.
+            m_voxelObject->m_minTextureCoord.set(0.0, 0.0, 0.0);
+            m_voxelObject->m_maxTextureCoord.set(1.0, 1.0, 1.0);
+
+//            // set haptic properties
+//            m_voxelObject->m_material->setStiffness(0.2 * 1);
+//            m_voxelObject->m_material->setStaticFriction(0.0);
+//            m_voxelObject->m_material->setDynamicFriction(0.0);
+
+//            // enable materials
+//            m_voxelObject->setUseMaterial(true);
+
+//            // set material
+//            m_voxelObject->m_material->setWhite();
+
+            // set quality of graphic rendering
+            m_voxelObject->setQuality(attribs.m_quality);
+
+            m_voxelObject->setIsosurfaceValue(attribs.m_isosurfaceValue);
+            m_voxelObject->setOpticalDensity(attribs.m_opticalDensity);
+
+            addChildSceneObject(m_voxelObject, cTransform());
+
+            cShaderProgramPtr shaderPgm = afShaderUtils::createFromAttribs(&m_attribs.m_shaderAttribs, m_name, "VOLUME");
+            if (shaderPgm){
+                m_voxelObject->setCustomShaderProgram(shaderPgm);
+            }
+            else{
+                m_voxelObject->setRenderingModeIsosurfaceColors();
+//                m_voxelObject->setRenderingModeVoxelColors();
+            }
+        }
+        else{
+            cerr << "ERROR! FAILED TO LOAD VOLUME FROM MULTI_IMAGES PATH: " << m_attribs.m_multiImageAttribs.m_path.c_str() << "/" << m_attribs.m_multiImageAttribs.m_prefix << endl;
+            return false;
+        }
+    }
+
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
+
+    loadPlugins(&attribs.m_pluginAttribs);
+    m_pluginManager.init(this, a_attribs);
+
+    return true;
+}
+
+///
+/// \brief afVolume::update
+/// \param dt
+///
+void afVolume::update(double dt)
+{
+
+}
+
+///
+/// \brief afVolume::fetchCommands
+/// \param dt
+///
+void afVolume::fetchCommands(double dt)
+{
+
+}
+
+///
+/// \brief afVolume::getShaderProgram
+/// \return
+///
+cShaderProgramPtr afVolume::getShaderProgram()
+{
+    return m_voxelObject->getShaderProgram();
+}
+
+///
+/// \brief afVolume::setShaderProgram
+/// \param a_program
+///
+void afVolume::setShaderProgram(cShaderProgramPtr a_program)
+{
+    if (m_voxelObject){
+        m_voxelObject->setShaderProgram(a_program);
+    }
+    else{
+        cerr << "ERROR! VOLUME FOR THIS VOLUME OBJECT HAS NOT BEEN INITIALIZED YET. CAN'T SET SHADER PROGRAM" << endl;
+    }
+}
+
+
+///
+/// \brief afVolume::backupShaderProgram
+///
+void afVolume::backupShaderProgram()
+{
+   m_previousRenderingMode = m_voxelObject->getRenderingMode();
+   m_prevLinearInterpolationFlag = m_voxelObject->getUseLinearInterpolation();
+}
+
+
+///
+/// \brief afVolume::restoreShaderProgram
+///
+void afVolume::restoreShaderProgram()
+{
+    if (m_voxelObject){
+        m_voxelObject->setRenderingMode(m_previousRenderingMode);
+        m_voxelObject->setUseLinearInterpolation(m_prevLinearInterpolationFlag);
+    }
+}
+
+
+///
+/// \brief afVolume::getInternalVolume
+/// \return
+///
+cVoxelObject* afVolume::getInternalVolume(){
+    return m_voxelObject;
 }

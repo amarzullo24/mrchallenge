@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,11 +37,13 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
 //------------------------------------------------------------------------------
+
+#ifndef AF_PATH_H
+#define AF_PATH_H
 
 #include <boost/filesystem/path.hpp>
 #include <string>
@@ -125,3 +127,5 @@ inline afPath operator/ (const afPath& a_path1, const afPath& a_path2){
     afPath outPath(a_path1.getWrappedObject() / a_path2.getWrappedObject());
     return outPath;
 }
+
+#endif

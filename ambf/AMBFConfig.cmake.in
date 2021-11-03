@@ -1,6 +1,6 @@
 #  Software License Agreement (BSD License)
-#  Copyright (c) 2019, AMBF.
-#  (www.aimlab.wpi.edu)
+#  Copyright (c) 2019-2021, AMBF.
+#  (https://github.com/WPI-AIM/ambf)
 #
 #  All rights reserved.
 #
@@ -33,7 +33,7 @@
 #  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 #
-#  $Author: seb $
+#  $Author: Adnan Munawar $
 #  $Date: $
 #  $Rev:  $
 
@@ -45,8 +45,8 @@ set(AMBF_DEFINITIONS @CONF_DEFINITIONS@)
 
 # library dependencies (contains definitions for IMPORTED targets)
 if(NOT TARGET AMBF AND NOT AMBF_BINARY_DIR)
-  include("${AMBF_CMAKE_DIR}/AMBFTargets.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/AMBFTargets.cmake")
 endif()
 
-# IMPORTED target created by CHAI3D-BULLETTargets.cmake
-set(AMBF_LIBRARIES AMBF)
+# IMPORTED target created by AMBFTargets.cmake
+set(AMBF_LIBRARIES "@CONF_LIBRARIES@")

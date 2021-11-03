@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -49,6 +48,7 @@
 #include <LinearMath/btQuaternion.h>
 #include <LinearMath/btTransform.h>
 #include <afMath.h>
+#include <fstream>
 
 using namespace ambf;
 using namespace chai3d;
@@ -136,3 +136,19 @@ btMatrix3x3 afUtils::getRotBetweenVectors<btMatrix3x3, btVector3>(const btVector
     return rot_mat;
 }
 
+
+///
+/// \brief afUtils::loadFileContents
+/// \param a_filepath
+/// \return
+///
+string afUtils::loadFileContents(const string &a_filepath)
+{
+    ifstream fileStream;
+    fileStream.open(a_filepath.c_str());
+    stringstream stringStream;
+    stringStream << fileStream.rdbuf();
+    fileStream.close();
+    string contents = stringStream.str();
+    return contents;
+}

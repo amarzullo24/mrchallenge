@@ -305,7 +305,63 @@ void cVoxelObject::setRenderingModeCustom()
     m_renderingMode = C_RENDERING_MODE_CUSTOM;
 
     // set interpolation mode
-    setUseLinearInterpolation(false);
+    setUseLinearInterpolation(true);
+}
+
+
+//==============================================================================
+/*!
+    This method sets a custom shader renderer.
+*/
+//==============================================================================
+void cVoxelObject::setCustomShaders(std::string vtx_shader, std::string frag_shader)
+{
+    C_SHADER_CUSTOM_VERT = vtx_shader;
+    C_SHADER_CUSTOM_FRAG = frag_shader;
+
+    // select mode
+    int mode = C_RENDERING_MODE_CUSTOM;
+
+    // setup vertex shader
+    m_vertexShaders[mode] = cShader::create(C_VERTEX_SHADER);
+    m_vertexShaders[mode]->loadSourceCode(C_SHADER_CUSTOM_VERT);
+
+    // setup fragment shader
+    m_fragmentShaders[mode] = cShader::create(C_FRAGMENT_SHADER);
+    m_fragmentShaders[mode]->loadSourceCode(C_SHADER_CUSTOM_FRAG);
+
+    // setup program shader
+    cShaderProgramPtr shaderPgm = cShaderProgram::create();
+    shaderPgm->attachShader(m_vertexShaders[mode]);
+    shaderPgm->attachShader(m_fragmentShaders[mode]);
+
+    setCustomShaderProgram(shaderPgm);
+}
+
+void cVoxelObject::setCustomShaderProgram(cShaderProgramPtr a_shaderPgm)
+{
+    // select mode
+    int mode = C_RENDERING_MODE_CUSTOM;
+
+    // setup program shader
+    m_programShaders[mode] = a_shaderPgm;
+
+    // link program shader
+    m_programShaders[mode]->linkProgram();
+
+    setRenderingModeCustom();
+}
+
+void cVoxelObject::setRenderingMode(int i)
+{
+    if (i >= 0 && i < C_NUM_VOXEL_RENDERING_MODES){
+        m_renderingMode = i;
+    }
+}
+
+int cVoxelObject::getRenderingMode()
+{
+    return m_renderingMode;
 }
 
 

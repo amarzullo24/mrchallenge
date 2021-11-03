@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -47,8 +46,8 @@ DVRK_FootPedals::DVRK_FootPedals(){
 }
 
 void DVRK_FootPedals::init_footpedals(std::shared_ptr<ros::NodeHandle> n){
-    clutch_sub = n->subscribe("/dvrk/footpedals/clutch", 10, &DVRK_FootPedals::clutch_sub_cb, this);
-    coag_sub = n->subscribe("/dvrk/footpedals/coag", 10, &DVRK_FootPedals::coag_sub_cb, this);
+    clutch_sub = n->subscribe("/footpedals/clutch", 10, &DVRK_FootPedals::clutch_sub_cb, this);
+    coag_sub = n->subscribe("/footpedals/coag", 10, &DVRK_FootPedals::coag_sub_cb, this);
     _clutch_pressed = false;
     _coag_pressed = false;
 }

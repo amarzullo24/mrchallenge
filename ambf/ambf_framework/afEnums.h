@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -75,25 +74,36 @@ enum class afBodyType{
 
 
 ///
-/// \brief The afObjectType enum
+/// \brief The afType enum
 ///
-enum class afObjectType{
+enum class afType{
+    INVALID,
     OBJECT,
     ACTUATOR,
-    CONSTRAINT_ACTUATOR,
     CAMERA,
     INPUT_DEVICE,
     LIGHT,
     RIGID_BODY,
     SOFT_BODY,
+    GHOST_OBJECT,
     SENSOR,
-    RAYTRACER_SENSOR,
-    RESISTANCE_SENSOR,
     VEHICLE,
-    MULTIBODY,
+    VOLUME,
+    MODEL,
+    POINT_CLOUD,
     WORLD,
-    JOINT,
-    INVALID
+    JOINT
+};
+
+
+///
+/// \brief The afPluginType enum
+///
+enum afPluginType{
+    SIMULATOR,
+    WORLD,
+    MODEL,
+    OBJECT
 };
 
 

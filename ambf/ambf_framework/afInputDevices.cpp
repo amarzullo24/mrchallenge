@@ -1,7 +1,7 @@
 //==============================================================================
 /*
     Software License Agreement (BSD License)
-    Copyright (c) 2020, AMBF
+    Copyright (c) 2019-2021, AMBF
     (https://github.com/WPI-AIM/ambf)
 
     All rights reserved.
@@ -37,7 +37,6 @@
 
     \author    <amunawar@wpi.edu>
     \author    Adnan Munawar
-    \version   1.0$
 */
 //==============================================================================
 
@@ -282,7 +281,7 @@ void afPhysicalDevice::createAfCursor(afWorldPtr a_afWorld, std::string a_name, 
     m_afCursor->m_visualMesh = new cMultiMesh();
     m_afCursor->m_visualMesh->m_meshes->push_back(tempMesh);
     a_afWorld->addSceneObjectToWorld(m_afCursor->m_visualMesh);
-    m_afCursor->afCreateCommInstance(afObjectType::OBJECT,
+    m_afCursor->afCreateCommInstance(afType::OBJECT,
                                      a_name, a_afWorld->resolveGlobalNamespace(a_namespace),
                                      minPF,
                                      maxPF);
@@ -455,7 +454,7 @@ void afPhysicalDevice::updateCursorPose(){
     if(m_afCursor){
         m_afCursor->setLocalPos(m_pos * m_workspaceScale);
         m_afCursor->setLocalRot(m_rot);
-#ifdef C_ENABLE_AMBF_COMM_SUPPORT
+#ifdef AF_ENABLE_AMBF_COMM_SUPPORT
         m_afCursor->m_afObjectCommPtr->set_userdata_desc("haptics frequency");
         m_afCursor->m_afObjectCommPtr->set_userdata(m_freq_ctr.getFrequency());
 #endif
@@ -583,9 +582,8 @@ bool afSimulatedDevice::createFromAttribs(afSimulatedDeviceAttribs *a_attribs)
 {
     afSimulatedDeviceAttribs& attribs = *a_attribs;
 
-
     if (attribs.m_rootLinkDefined == false && attribs.m_sdeDefined == false){
-        std::cerr << "ERROR: PHYSICAL DEVICE BINDING REQUIRES EITHER A \"simulated multibody\""
+        std::cerr << "ERROR: PHYSICAL DEVICE BINDING REQUIRES EITHER A \"simulated multibody\" "
                      "or a \"root link\" TO DISPLAY A PROXY IN SIMULATION \n";
         return 0;
     }
@@ -598,21 +596,18 @@ bool afSimulatedDevice::createFromAttribs(afSimulatedDeviceAttribs *a_attribs)
         if (afModel::createFromAttribs(&attribs.m_modelAttribs) == false){
             return 0;
         }
-        else{
-//            m_afWorld->addAFModel(this);
-        }
 
         // If multibody is defined, then the root link has to be searched in the defined multibody
         if (attribs.m_rootLinkDefined){
-            m_rootLink = getAFRigidBodyLocal(attribs.m_rootLinkName);
+            m_rootLink = getRigidBody(attribs.m_rootLinkName, false);
         }
         else{
-            m_rootLink = getRootAFRigidBodyLocal();
+            m_rootLink = getRootRigidBody();
         }
     }
     // If only the root link is defined, we are going to look for it in the global space
     else if (attribs.m_rootLinkDefined){
-        m_rootLink = m_afWorld->getAFRigidBody(attribs.m_rootLinkName, false);
+        m_rootLink = m_afWorld->getRigidBody(attribs.m_rootLinkName, false);
     }
 
     if (m_rootLink != nullptr){
@@ -654,7 +649,7 @@ bool afSimulatedDevice::createFromAttribs(afSimulatedDeviceAttribs *a_attribs)
         // running
         if(attribs.m_sdeDefined){
             std::string simDevName = "simulated_device_" + std::to_string(m_phyDev->m_CCU_Manager->s_inputDeviceCount) + modelName;
-            m_rootLink->afCreateCommInstance(afObjectType::RIGID_BODY,
+            m_rootLink->afCreateCommInstance(afType::RIGID_BODY,
                                                         simDevName,
                                                         m_afWorld->resolveGlobalNamespace(m_rootLink->getNamespace()),
                                                         m_rootLink->getMinPublishFrequency(),
@@ -662,6 +657,7 @@ bool afSimulatedDevice::createFromAttribs(afSimulatedDeviceAttribs *a_attribs)
         }
     }
     else{
+        cerr << "ERROR! FAILED TO LOAD ROOT LINK FOR MODEL " << attribs.m_modelAttribs.m_filePath.c_str() << endl;
         return 0;
     }
 
@@ -710,15 +706,6 @@ cMatrix3d afSimulatedDevice::getRot(){
 ///
 cMatrix3d afSimulatedDevice::getSimRotInitial(){
     return m_simRotInitial;
-}
-
-///
-/// \brief afSimulatedDevice::updateMeasuredPose
-///
-void afSimulatedDevice::updateGlobalPose(){
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_pos  = m_rootLink->getLocalPos();
-    m_rot = m_rootLink->getLocalRot();
 }
 
 ///
@@ -772,6 +759,7 @@ void afSimulatedDevice::clearWrench(){
 ///
 afCollateralControlManager::afCollateralControlManager(afWorldPtr a_afWorld){
     m_deviceHandler = nullptr;
+//    m_deviceHandler = new cHapticDeviceHandler();
     m_afWorld = a_afWorld;
 
     m_use_cam_frame_rot = true;
@@ -791,6 +779,10 @@ afCollateralControlManager::~afCollateralControlManager(){
         if (m_collateralControlUnits[i].m_simulatedDevicePtr != nullptr){
             delete m_collateralControlUnits[i].m_simulatedDevicePtr;
         }
+    }
+
+    if (m_deviceHandler){
+        delete m_deviceHandler;
     }
 }
 
@@ -828,7 +820,7 @@ bool afCollateralControlManager::createFromAttribs(vector<afTeleRoboticUnitAttri
     bool load_status = false;
 
     if (a_attribsVec->size() > 0){
-        m_deviceHandler.reset(new cHapticDeviceHandler());
+        m_deviceHandler = new cHapticDeviceHandler();
     }
 
     for (int i = 0; i < a_attribsVec->size(); i++){
@@ -839,6 +831,7 @@ bool afCollateralControlManager::createFromAttribs(vector<afTeleRoboticUnitAttri
 
         if (pD->createFromAttribs(&tuAttrib.m_iidAttribs)){
             if (sD->createFromAttribs(&tuAttrib.m_sdeAttribs)){
+                m_afWorld->addModel(sD);
                 afCollateralControlUnit ccu;
                 ccu.m_physicalDevicePtr = pD;
                 ccu.m_simulatedDevicePtr = sD;
@@ -847,11 +840,18 @@ bool afCollateralControlManager::createFromAttribs(vector<afTeleRoboticUnitAttri
                 m_collateralControlUnits.push_back(ccu);
                 load_status = true;
             }
+            else{
+                std::cerr << "WARNING: FAILED TO MODEL " << tuAttrib.m_sdeAttribs.m_filePath.c_str() << " FOR DEVICE: \"" << devName << "\"\n";
+                load_status = false;
+            }
         }
         else
         {
             std::cerr << "WARNING: FAILED TO LOAD DEVICE: \"" << devName << "\"\n";
             load_status = false;
+        }
+
+        if (load_status == false){
             delete pD;
             delete sD;
         }
@@ -1090,7 +1090,7 @@ bool afCollateralControlUnit::pairCameras(afWorldPtr a_afWorld, std::vector<stri
 {
     for(int i = 0 ; i < a_cameraNames.size() ; i++){
         std::string camName = a_cameraNames[i];
-        afCameraPtr camPtr = a_afWorld->getAFCamera(camName);
+        afCameraPtr camPtr = a_afWorld->getCamera(camName);
         if(camPtr){
             // Create labels for the contextual controlling devices for each Window-Camera Pair
             cFontPtr font = NEW_CFONTCALIBRI20();
@@ -1111,7 +1111,7 @@ bool afCollateralControlUnit::pairCameras(afWorldPtr a_afWorld, std::vector<stri
     // If no cameras are specified, maybe pair all the cameras?
     // Can be commented out.
     if(a_cameraNames.size() == 0){
-        afCameraVec camVec = a_afWorld->getAFCameras();
+        afCameraVec camVec = a_afWorld->getCameras();
         for(int i = 0 ; i < camVec.size() ; i++){
             afCameraPtr camPtr = camVec[i];
             // Create labels for the contextual controlling devices for each Window-Camera Pair
