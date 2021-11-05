@@ -13,6 +13,7 @@ Let's start!
 
 # Setting up the system
 This repository contains all the codes and packages to setting up the system. The code has been tested for **Ubuntu 18.04**
+The simulation environment is based on [ROS](https://www.ros.org/). Please install ROS by following the official [instructions](http://wiki.ros.org/melodic/Installation/Ubuntu).
 
 ## 1. Clone the repository
 Clone the repository on your computer and follow the instructions:
